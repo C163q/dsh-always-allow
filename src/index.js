@@ -34,19 +34,25 @@ export const name = 'dsh-always-allow'
 export const CHANNEL = '/always-allow'
 
 /**
- * Services consumed: `webServer` hosts this plugin's own route, `connection`
- * supplies the trust check that route applies, and `tools` the events.
+ * Services consumed: only `webServer`, which hosts this plugin's own route.
+ *
+ * `connection` is deliberately NOT declared, even though the route prefers to
+ * run its trust check. A declared Service that the composing tree does not
+ * provide leaves the fiber PENDING forever — no error, no log — and a pending
+ * fiber also keeps this package's browser half out of the boot graph, so the UI
+ * silently vanishes. The route therefore reads `connection` from the live
+ * context when it handles a request and skips the check when absent.
+ *
+ * `tools` is likewise absent: listening to `tools/pre-execute` needs no Service
+ * handle.
  *
  * No `export default` here on purpose. The Loader resolves a row's module
  * namespace through `unwrapExports` (which prefers `exports.default`) and then
  * narrows an applicable object to its `apply` function; the fiber is built from
  * `Inject.resolve(plugin.inject)` on THAT value, so a declaration exported
- * beside a default object would be silently dropped and this plugin's own
- * route registration would fail with `cannot get property "webServer" without
- * inject`. The declaration therefore lives directly in this array and the
- * `inject` named export.
+ * beside a default object would be silently dropped.
  */
-export const inject = ['webServer', 'connection', 'tools']
+export const inject = ['webServer']
 
 /**
  * Append one rule to a rules file atomically.
@@ -130,7 +136,6 @@ export function apply(ctx, config) {
   }), 'always-allow: command tracker')
 
   const webServer = ctx.get('webServer')
-  const connection = ctx.get('connection')
   if (webServer === undefined) return
 
   /*
@@ -158,6 +163,9 @@ export function apply(ctx, config) {
           res.end(JSON.stringify(value))
         }
         try {
+          // Read lazily: `connection` is provided by a row that may activate
+          // later, and an absent one simply skips the trust test.
+          const connection = ctx.get('connection')
           const rejection = connection?.requestRejection === undefined
             ? undefined
             : connection.requestRejection(req)

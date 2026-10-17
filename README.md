@@ -195,10 +195,15 @@ src/prefix.js       pure prefix derivation + refusal vocabulary
 src/rules-file.js   pure YAML rendering and insertion
 src/endpoints.js    transport-neutral propose/save operations
 src/config.js       config resolution and defaults
-src/client.js       browser bundle: the approval strip
+src/client.js       browser bundle: the approval panel takeover
 test/               node:test suites
-docs/               rule format and troubleshooting
+docs/               rule format, troubleshooting, and PITFALLS.md
 ```
+
+`docs/PITFALLS.md` records the Harness traps that fail **silently** — a pending
+`inject` freezing the row, the market plugin's own disabled list, a route that
+registers and is disposed milliseconds later. Each one is written down with the
+symptom it produced, because none of them reports an error.
 
 ---
 

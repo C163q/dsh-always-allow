@@ -31,7 +31,8 @@
       "platform": "web",
       "immediately": false,
       "inject": [
-        "@deepseek-ai/dsh-client-locale"
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-connection"
       ]
     }
   },

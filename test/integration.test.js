@@ -215,3 +215,28 @@ test('an invalid config fails the mount loudly', async (t) => {
     await assert.rejects(mounting, /always-allow:/)
   }
 })
+
+test('inject declares only services the route can actually reach', async (t) => {
+  // A declared Service that no earlier row provides leaves the fiber PENDING
+  // forever: no error, no log, and — because the row never activates — no
+  // browser half either. That is silent, so pin the contract here.
+  assert.deepEqual(plugin.inject, ['webServer'])
+
+  const cordis = await loadCordis()
+  if (cordis === undefined) {
+    t.skip('harness checkout not available for the Cordis import')
+    return
+  }
+  const app = new cordis.Context()
+  const webServer = fakeWebServer()
+  app.provide('webServer', webServer)
+  // `connection` is provided AFTER the mount, exactly as at runtime.
+  const fiber = app.plugin({ name: plugin.name, inject: plugin.inject, apply: plugin.apply })
+  await fiber
+  assert.equal(fiber.state, 2, 'the fiber activates without connection')
+
+  app.provide('connection', { requestRejection: () => 403 })
+  const route = webServer.routes.find((entry) => entry.path === plugin.CHANNEL)
+  const rejected = await callRoute(route, { url: `${plugin.CHANNEL}/propose`, body: { callId: 'x' } })
+  assert.equal(rejected.status, 403, 'a newly provided connection is honoured at request time')
+})
