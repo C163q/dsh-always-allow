@@ -20,8 +20,7 @@ top of this harness's existing declarative rule engine.
 While a shell approval is pending, a strip appears above the composer:
 
 ```
-[ 永久放行 git status* ]   写入本工作区的规则文件，由 permission-rules 生效
-[ Always allow git status* ]
+[ Always allow git status* ]   Writes this workspace rule file, which permission-rules reads
 ```
 
 Clicking it appends one rule and the prompt clears:
