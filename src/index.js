@@ -26,6 +26,8 @@ import { resolveConfig } from './config.js'
 import { commandOf } from './prefix.js'
 import { dispatch } from './endpoints.js'
 import { insertRule } from './rules-file.js'
+import { findAllowRule } from './allow-rules.js'
+import { createEscalationListener } from './escalation.js'
 
 /** Plugin name: matches the package name and the bundle row id. */
 export const name = 'dsh-always-allow'
@@ -119,10 +121,12 @@ export function apply(ctx, config) {
   /** Pending approval id → the command and workspace it belongs to. Bounded. */
   const calls = new Map()
 
-  ctx.effect(() => ctx.on('tools/pre-execute', (exec) => {
-    // A waterfall listener's return value IS the decision. This plugin answers
-    // `allow` — the neutral passthrough — so it never makes a permission
-    // decision; `permission-rules` still decides, and still asks.
+  ctx.effect(() => ctx.on('tools/pre-execute', async (exec, next) => {
+    // Record the command line, then DELEGATE. Returning a decision here would
+    // make it final: in a waterfall a listener that does not call `next()`
+    // vetoes every listener after it, so `permission-rules` would never get to
+    // deny or ask and every call would run unconditionally. `next()` is the
+    // whole point of this listener being neutral.
     const command = commandOf(exec.name, exec.arguments, resolved.toolNames)
     if (command !== undefined && typeof exec.callId === 'string') {
       calls.delete(exec.callId)
@@ -132,8 +136,43 @@ export function apply(ctx, config) {
         if (!oldest.done) calls.delete(oldest.value)
       }
     }
-    return { kind: 'allow' }
+    return next()
   }), 'always-allow: command tracker')
+
+  /*
+   * Auto-answer a sandbox escalation whose command a saved `allow` rule
+   * already covers.
+   *
+   * `permissionRulesRuntime` is a Service PROVIDED by `dsh-permission-rules`,
+   * so it is absent when that row is missing or disabled. `ctx.inject` waits
+   * for it and re-runs when it goes away, which is the only supported way to
+   * consume an optional Service: a declared `inject` entry would leave this
+   * whole plugin pending forever when the engine is absent.
+   */
+  ctx.inject(['permissionRulesRuntime'], (scope) => {
+    const runtime = scope.get('permissionRulesRuntime')
+    const listener = createEscalationListener({
+      // The runtime caches per workspace and reloads on file change, so reusing
+      // it keeps ONE rule engine in the process, with its own hot reload.
+      rulesetFor: (cwd) => {
+        try {
+          return runtime.rulesFor(cwd)?.compiled
+        } catch (error) {
+          // A bad rule file must fall back to asking a human, never to a crash
+          // and never to an auto-allow.
+          ctx.logger?.warn?.(`always-allow: could not load rules for ${cwd}: ${String(error)}`)
+          return undefined
+        }
+      },
+      calls,
+      findAllowRule,
+      enabled: () => resolveConfig(config).autoApproveEscalation,
+    })
+    scope.effect(
+      () => scope.on('approval/request', listener),
+      'always-allow: escalation answers',
+    )
+  })
 
   const webServer = ctx.get('webServer')
   if (webServer === undefined) return

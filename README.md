@@ -69,7 +69,8 @@ Then verify the layer before starting:
 dsh --profile web --dump-config | grep -A 12 '== dsh-always-allow'
 ```
 
-The row should show `rulesFile`, `toolNames`, and `maxTracked` under
+The row should show `rulesFile`, `toolNames`, `maxTracked`, and
+`autoApproveEscalation` under
 `# == dsh-always-allow`.
 
 Remove it the same way:
@@ -123,6 +124,7 @@ plugin loudly instead of silently falling back.
 | `rulesFile` | `.dsh/rules.yaml` | Rule file, resolved against the session workspace unless absolute. Must match the `rulesFile` of your `permission-rules` row. |
 | `toolNames` | `[bash, pwsh]` | Shell Tools whose arguments carry the command line. Only tools with a `command` string argument are supported. |
 | `maxTracked` | `128` | Pending approvals remembered for the browser half (oldest evicted first). |
+| `autoApproveEscalation` | `false` | Also answer sandbox-escalation approvals from a saved rule. See below. |
 
 Example override:
 
@@ -136,6 +138,52 @@ Example override:
 ```
 
 ---
+
+## Two different approvals
+
+A shell Tool can raise **two** unrelated approvals, and a saved rule only
+answers the first:
+
+| Approval | Raised by | Consults the rules? |
+| --- | --- | --- |
+| "may this command run?" | the `tools/pre-execute` waterfall | **yes** — `dsh-permission-rules` decides |
+| "may this call leave the sandbox?" | the Tool body, mid-execute | **no** — it asks the approval service directly |
+
+That is why a rule can feel like it "did not take effect": the command prompt
+stops appearing, and a *different* prompt — one whose reason reads
+`escalate sandbox to danger-full-access: …` — shows up for the same command.
+
+Set `autoApproveEscalation: true` to close that second gap:
+
+```yaml
+- id: always-allow
+  config:
+    rulesFile: .dsh/rules.yaml
+    toolNames: [bash, pwsh]
+    maxTracked: 128
+    autoApproveEscalation: true
+```
+
+When it is on, an escalation whose command is covered by a saved `allow` rule is
+answered automatically. When it is off (the default), every escalation still
+reaches a human.
+
+**Read this before turning it on.** A rule grants "this command may run"; an
+escalation asks for "this call may leave the sandbox", which is full host
+access. Turning this on means every saved prefix — and every command it covers,
+including one rewritten later — can obtain that access without a click. That is
+the same trade Codex makes by default; it is still a strictly larger grant than
+the rule itself states.
+
+This option needs `dsh-permission-rules` installed and **enabled**: the plugin
+reads its *compiled* rules through its `permissionRulesRuntime` Service rather
+than parsing rule files itself, so exactly one engine resolves rules, with that
+engine's own caching and file watching.
+
+Rules carrying a dimension this plugin cannot evaluate faithfully — `params`,
+`paths`, `absent`, `when`, `agents`, `network` — deliberately do **not**
+auto-approve. A false negative costs one click; a false positive would grant
+permission the rule never expressed.
 
 ## Which prefixes are offered
 

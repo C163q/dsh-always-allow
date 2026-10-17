@@ -103,9 +103,15 @@ test('the plugin mounts, tracks a shell call, and serves both endpoints', async 
   assert.ok(route, 'the plugin registered its own route')
   assert.equal(webServer.routes.length, 1)
 
-  // A pre-execute listener must never tighten or loosen the decision.
+  // A pre-execute listener must never tighten or loosen the decision. This
+  // assertion used to expect `allow`, which encoded the bug: the plugin
+  // returned its own decision instead of delegating, so in a waterfall it
+  // vetoed every later listener and `permission-rules` could never deny or ask.
+  // The downstream decision MUST survive.
   const decision = await app.waterfall('tools/pre-execute', shellExec('call-1', 'git status --short', workspace), () => Promise.resolve({ kind: 'ask' }))
-  assert.deepEqual(decision, { kind: 'allow' })
+  assert.deepEqual(decision, { kind: 'ask' }, 'the plugin delegates instead of deciding')
+  const denied = await app.waterfall('tools/pre-execute', shellExec('call-2', 'rm -rf /', workspace), () => Promise.resolve({ kind: 'deny', reason: 'blocked' }))
+  assert.deepEqual(denied, { kind: 'deny', reason: 'blocked' }, 'a downstream deny is not overridden')
 
   const proposal = await callRoute(route, { url: `${plugin.CHANNEL}/propose`, body: { callId: 'call-1' } })
   assert.equal(proposal.status, 200)

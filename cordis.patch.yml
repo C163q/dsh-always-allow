@@ -23,3 +23,11 @@
           - pwsh
         # How many pending approvals are remembered for the browser half.
         maxTracked: 128
+        # Also answer SANDBOX-ESCALATION approvals from a saved allow rule.
+        #
+        # A rule says "this command may run"; an escalation asks "may this call
+        # leave the sandbox". Treating the first as the second grants full host
+        # access to anything a saved prefix covers, so this is opt-in. Requires
+        # dsh-permission-rules to be installed and enabled: this plugin reads
+        # its compiled rules rather than parsing rule files itself.
+        autoApproveEscalation: false

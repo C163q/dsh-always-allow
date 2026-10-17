@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.2.0 - 2026-10-18
+
+### Added
+
+- `autoApproveEscalation` (default `false`). When enabled, a sandbox-escalation
+  approval is answered from a saved `allow` rule covering the command, instead
+  of asking again. A rule says "this command may run"; an escalation asks "may
+  this call leave the sandbox" — a strictly stronger grant — so this is opt-in
+  and documented as such. Requires `dsh-permission-rules`, whose COMPILED rules
+  are read through its `permissionRulesRuntime` Service: no second rule engine,
+  no second YAML parser, and the engine's own file watching and caching apply.
+
+### Fixed
+
+- The `tools/pre-execute` listener returned `{kind:'allow'}` instead of calling
+  `next()`. In a waterfall that makes the decision FINAL, so every listener
+  after this plugin — `permission-rules` included — was vetoed and its `deny`
+  and `ask` decisions never happened. Ordinary approvals were unreachable while
+  this plugin was mounted.
+- The integration test asserted the broken behaviour (`ask` in, `allow` out), so
+  the suite stayed green. It now asserts that a downstream `ask` and `deny`
+  survive.
+
 ## v0.1.1
 
 ### Fixed

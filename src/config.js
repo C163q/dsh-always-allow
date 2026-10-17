@@ -22,10 +22,22 @@ export const MAX_BODY_BYTES = 4096
 export const DEFAULT_MAX_TRACKED = 128
 
 /**
+ * Whether a saved `allow` rule also answers a sandbox-escalation approval.
+ *
+ * OFF by default, and deliberately so: a rule says "this command may run", not
+ * "this command may leave the sandbox". Treating the first as the second would
+ * silently grant full host access to anything a saved prefix covers, which is a
+ * far stronger claim than the click that wrote the rule. Opting in is a
+ * workspace owner's decision, made once, in writing.
+ */
+export const DEFAULT_AUTO_APPROVE_ESCALATION = false
+
+/**
  * @typedef {object} Config
  * @property {string} [rulesFile]    Rule file the `permission-rules` row reads.
  * @property {string[]} [toolNames]  Shell Tool names carrying a `command` argument.
  * @property {number} [maxTracked]   Pending approvals remembered at once.
+ * @property {boolean} [autoApproveEscalation] Also answer sandbox escalations.
  */
 
 /**
@@ -35,6 +47,7 @@ export const DEFAULT_MAX_TRACKED = 128
  * @property {string[]} toolNames
  * @property {number} maxTracked
  * @property {number} maxBodyBytes
+ * @property {boolean} autoApproveEscalation
  */
 
 /**
@@ -65,7 +78,18 @@ export function resolveConfig(config) {
     throw new Error('always-allow: maxTracked must be a positive integer')
   }
 
-  return { rulesFile, toolNames: [...toolNames], maxTracked, maxBodyBytes: MAX_BODY_BYTES }
+  const autoApproveEscalation = raw.autoApproveEscalation ?? DEFAULT_AUTO_APPROVE_ESCALATION
+  if (typeof autoApproveEscalation !== 'boolean') {
+    throw new Error('always-allow: autoApproveEscalation must be true or false')
+  }
+
+  return {
+    rulesFile,
+    toolNames: [...toolNames],
+    maxTracked,
+    maxBodyBytes: MAX_BODY_BYTES,
+    autoApproveEscalation,
+  }
 }
 
 /**

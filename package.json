@@ -1,6 +1,6 @@
 {
   "name": "dsh-always-allow",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Codex-style \"always allow commands that start with …\" for DeepSeek Harness approvals: a one-click prefix rule written into the workspace rules file that dsh-permission-rules already reads.",
   "type": "module",
   "license": "Apache-2.0",
@@ -54,10 +54,14 @@
     "dsh": ">=0.1.2-rc.1 <0.2.0 || >=0.1.5-alpha.1 <0.2.0 || >=0.1.6-0 <0.2.0 || >=0.1.7-0 <0.2.0 || >=0.2.0-0 <0.3.0 || >=0.2.1-0 <0.3.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.5-alpha.1"
+    "@deepseek-ai/cordis": "^4.0.5-alpha.1",
+    "dsh-permission-rules": ">=0.7.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "dsh-permission-rules": {
       "optional": true
     }
   }
