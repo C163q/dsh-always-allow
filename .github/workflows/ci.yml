@@ -1,0 +1,35 @@
+# CI for dsh-always-allow.
+#
+# These are pure-ESM sources with no build step: the package ships the same
+# files it tests, so CI runs the suites directly on two supported Node lines.
+# The integration suite imports a real Cordis context out of a harness
+# checkout; it skips cleanly when no checkout is available, which is what
+# happens here.
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax check every source file
+        run: npm run check
+      - name: Run the test suites
+        run: npm test

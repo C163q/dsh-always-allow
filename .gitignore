@@ -1,0 +1,7 @@
+node_modules/
+*.tgz
+*.log
+
+# Local scratch
+.dsh/
+.DS_Store
