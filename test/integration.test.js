@@ -246,3 +246,59 @@ test('inject declares only services the route can actually reach', async (t) => 
   const rejected = await callRoute(route, { url: `${plugin.CHANNEL}/propose`, body: { callId: 'x' } })
   assert.equal(rejected.status, 403, 'a newly provided connection is honoured at request time')
 })
+
+test('the escalation listener mounts only when the rule engine is present', async (t) => {
+  const cordis = await loadCordis()
+  if (cordis === undefined) {
+    t.skip('harness checkout not available for the Cordis import')
+    return
+  }
+  const workspace = await mkdtemp(join(tmpdir(), 'always-allow-'))
+  t.after(() => rm(workspace, { recursive: true, force: true }))
+
+  const { Context } = cordis
+  const app = new Context()
+  const webServer = fakeWebServer()
+  app.provide('webServer', webServer)
+  app.provide('connection', { requestRejection: () => undefined })
+  app.provide('tools', {})
+
+  // No runtime yet: the listener must not exist, and the plugin must still
+  // mount. A declared `inject` entry would have left the whole fiber pending.
+  const fiber = app.plugin({ name: plugin.name, inject: plugin.inject, apply: plugin.apply, Config: undefined }, { autoApproveEscalation: true })
+  await fiber
+  assert.ok(webServer.routes.find((entry) => entry.path === plugin.CHANNEL), 'the route mounted without the engine')
+
+  // Provide the engine the way `dsh-permission-rules` does, then drive one
+  // escalation through the real `approval/request` waterfall.
+  const compiled = {
+    rules: [{
+      index: 0, sourceIndex: 0, action: 'allow', reason: 'saved', enabled: true, tags: [],
+      tools: [], agents: [], params: new Map(), paths: [], absent: [], source: {},
+      argv: {
+        command: [/^git$/],
+        args: { positive: [], negative: [] },
+        anyArg: { positive: [], negative: [] },
+        pipeline: [],
+      },
+    }],
+  }
+  app.provide('permissionRulesRuntime', { rulesFor: () => ({ compiled, sources: [], cwd: workspace }) })
+
+  // Track a call the way a real pre-execute pass does.
+  await app.waterfall('tools/pre-execute', shellExec('call-esc', 'git status', workspace), () => Promise.resolve({ kind: 'allow' }))
+
+  const approved = await app.waterfall(
+    'approval/request',
+    { callId: 'call-esc', toolName: 'bash', reason: 'escalate sandbox to danger-full-access: needs real /tmp' },
+    () => Promise.resolve('unavailable'),
+  )
+  assert.equal(approved, 'allowed-once', 'a saved rule answers its own escalation')
+
+  const other = await app.waterfall(
+    'approval/request',
+    { callId: 'call-esc', toolName: 'bash', reason: 'mkfs formats a device' },
+    () => Promise.resolve('unavailable'),
+  )
+  assert.equal(other, 'unavailable', 'an ordinary ask is still delegated')
+})
