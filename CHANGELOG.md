@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.1 - 2026-10-18
+
+### Fixed
+
+- The panel silently offered two buttons where other approvals offer three. A
+  refused proposal (`compound`, `never`, `too-broad`, …) renders no
+  "allow forever" button, but the `blocked.<code>` sentence explaining WHY was
+  reachable only from the save handler — whose button is the one not rendered,
+  so it could never appear. The card now states the reason under the command.
+
 ## v0.2.0 - 2026-10-18
 
 ### Added

@@ -11,6 +11,26 @@ window.__ModuleLoader__.load({
     const React = require('react')
     const h = React.createElement
 
+    /**
+     * The sentence explaining why no "allow forever" button is offered.
+     *
+     * `blocked.<code>` copy existed but was reachable ONLY from the save
+     * handler, whose button is exactly the one not rendered when a proposal is
+     * refused — so the user was told nothing. A compound command silently
+     * offered two buttons instead of three.
+     * @param {{status: string, result?: {code?: string}}} proposal - panel state.
+     * @param {(key: string) => string} t - dictionary lookup.
+     * @returns {string | null} the hint, or null when there is nothing to say.
+     */
+    const blockedHintOf = (proposal, t) => {
+      if (proposal?.status !== 'blocked') return null
+      const key = `blocked.${String(proposal.result?.code ?? '')}`
+      const localized = t(key)
+      // A missing key comes back as the key itself; saying nothing beats
+      // printing "blocked.undefined" at the user.
+      return localized === key ? null : localized
+    }
+
     const NS = 'always-allow'
     const APPROVAL_NS = 'approval'
     const name = 'dsh-always-allow'
@@ -288,6 +308,12 @@ window.__ModuleLoader__.load({
         ? `${t('allowForever')} ${proposal.proposal.command}${proposal.proposal.args.length > 0 ? ` ${proposal.proposal.args.join(' ')}` : ''}*`
         : t('allowForever')
 
+      // Why no "allow forever" button. Without this the card silently offers two
+      // buttons where other approvals offer three, and the reason the user reads
+      // in `blocked.<code>` was reachable ONLY from the save-failure path — that
+      // is, never, because the button it belongs to is the one not rendered.
+      const blockedHint = blockedHintOf(proposal, t)
+
       return h('div', { className: 'always-allow__root' },
         h('div', { className: 'always-allow__card', 'aria-busy': answered },
           h('div', { className: 'always-allow__strip' },
@@ -295,7 +321,10 @@ window.__ModuleLoader__.load({
             t('waiting')),
           h('div', { className: 'always-allow__body', role: 'group', 'aria-label': t('detail.aria') },
             h('div', { className: 'always-allow__headline' }, headline),
-            detail),
+            detail,
+            blockedHint === null
+              ? null
+              : h('div', { className: 'always-allow__note' }, blockedHint)),
           h('div', { className: 'always-allow__row' },
             note === undefined
               ? null
