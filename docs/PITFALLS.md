@@ -249,3 +249,40 @@ plugin.
 card, and assert the rendered result in a browser before shipping. `scripts/`
 exists for exactly this: `approval_test.sh` fails loudly when the card is missing
 *or* the composer came back empty, which is the signature of this failure.
+
+## 18. An `allow` rule does not approve a sandbox escalation
+
+The two approvals a shell Tool can raise are **independent**, and a rule only
+covers the first:
+
+| Approval | Raised by | Consulted before asking |
+| --- | --- | --- |
+| "may this command run?" | `tools/pre-execute` waterfall | `permission-rules` (and any other listener) |
+| "may this call widen the sandbox?" | the Tool body, mid-execute | **nothing** — `approveEscalation` asks the approval service directly |
+
+`packages/sandbox/sandbox/src/escalation.ts:188` calls
+`approval.approver.request(...)` immediately, with no rule lookup, and
+`packages/shell/tool-bash/src/index.ts:483` reaches it from inside `execute`,
+after `tools/pre-execute` has already returned.
+
+So a saved rule like
+
+```yaml
+match: { tools: [bash, pwsh], argv: { command: "./fff-timer-query" } }
+action: allow
+```
+
+correctly stops the *first* prompt, and the user then sees a *different* prompt —
+one whose reason reads `允许本次操作使用 danger-full-access 权限：…`. That second
+prompt is not a bug, not a stale cache, and not something a restart fixes: it is
+a permission the rule engine has no vocabulary for. Nothing in a rule document
+can pre-approve a sandbox mode.
+
+**Consequence for this plugin:** the always-allow button answers the prompt it is
+shown. On an escalation prompt it answers `allowed-once` for *that* call, and the
+saved rule prevents the *command* prompt from coming back — but the next
+escalation of the same command asks again. Treating that as "the rule did not
+take effect" is the wrong read, and "restart the session" is the wrong fix.
+
+**Rule:** when a saved rule appears not to work, read the prompt's `reason`
+first. A changed reason means a different approval, not a broken rule.

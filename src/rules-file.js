@@ -12,6 +12,20 @@
  * One YAML scalar: double-quoted, so every accepted word round-trips exactly.
  * @param {string} value
  */
+/**
+ * Whether a document already carries this exact rule block.
+ *
+ * The comparison is textual on the normalized block: this module never parses
+ * YAML, and a rule it rendered itself is byte-identical when present.
+ * @param {string} body - current document.
+ * @param {string} ruleText - rule block from {@link renderRule}.
+ */
+export function hasRule(body, ruleText) {
+  const needle = String(ruleText ?? '').trim()
+  if (needle === '') return false
+  return String(body ?? '').includes(needle)
+}
+
 export function scalar(value) {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
@@ -53,6 +67,11 @@ export function renderRule(proposal, reason, toolNames) {
  * in place: it carries no entries, so there is nothing to corrupt, and
  * refusing it would leave a pruned file permanently unwritable — the file
  * would parse fine, the plugin would simply never save again.
+ *
+ * An identical rule already present is NOT appended twice. Clicking the button
+ * twice, or approving the same command in two tabs, would otherwise grow the
+ * document on every click, and a duplicate is invisible in the UI: the engine
+ * stops at the first match, so the copy below it never does anything.
  * @param {string} text - current file contents (may be empty).
  * @param {string} ruleText - rule block from {@link renderRule}.
  * @returns {string} the new document.
@@ -61,6 +80,7 @@ export function renderRule(proposal, reason, toolNames) {
  */
 export function insertRule(text, ruleText) {
   const body = String(text ?? '').trimEnd()
+  if (hasRule(body, ruleText)) return body === '' ? `rules:\n` : `${body}\n`
   if (body.trim() === '') return `rules:\n${ruleText}\n`
   if (/^rules:\s*$/m.test(body)) return `${body}\n${ruleText}\n`
   // `rules: []` / `rules: [ ]` — an empty flow sequence, same as no rules.

@@ -90,3 +90,22 @@ test('an empty flow list is filled in place instead of being refused', () => {
 test('a non-empty flow list is still refused', () => {
   assert.throws(() => insertRule('rules: [{match: {}}]', 'RULE'), /flow-style/)
 })
+
+test('an identical rule is not appended twice', () => {
+  // Clicking the button twice used to grow the document on every click, and the
+  // duplicate is invisible in the UI: first-match wins, so the copy below never
+  // runs.
+  const rule = renderRule({ command: 'git', args: ['status'] }, 'Always allow "git status"', ['bash'])
+  const once = insertRule('', rule)
+  const twice = insertRule(once, rule)
+  assert.equal(twice, once, 'the second insert is a no-op')
+  assert.equal((twice.match(/command: "git"/g) ?? []).length, 1)
+})
+
+test('a different rule still appends after an identical one', () => {
+  const first = renderRule({ command: 'git', args: [] }, 'a', ['bash'])
+  const second = renderRule({ command: 'ls', args: [] }, 'b', ['bash'])
+  const text = insertRule(insertRule('', first), second)
+  assert.match(text, /command: "git"/)
+  assert.match(text, /command: "ls"/)
+})
