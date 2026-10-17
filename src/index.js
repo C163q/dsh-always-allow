@@ -121,6 +121,12 @@ export function apply(ctx, config) {
   /** Pending approval id → the command and workspace it belongs to. Bounded. */
   const calls = new Map()
 
+  // PREPEND on purpose. A waterfall listener that returns a decision never
+  // calls the listeners after it, and `permission-rules` answers `ask` by
+  // RETURNING — so a tracker registered at normal priority is skipped exactly
+  // when it is needed, and the panel then has no command to offer a prefix for.
+  // Escalations masked this: they are raised from inside the Tool body, after
+  // pre-execute already completed, so the tracker had run by then.
   ctx.effect(() => ctx.on('tools/pre-execute', async (exec, next) => {
     // Record the command line, then DELEGATE. Returning a decision here would
     // make it final: in a waterfall a listener that does not call `next()`
@@ -137,7 +143,7 @@ export function apply(ctx, config) {
       }
     }
     return next()
-  }), 'always-allow: command tracker')
+  }, { prepend: true }), 'always-allow: command tracker')
 
   /*
    * Auto-answer a sandbox escalation whose command a saved `allow` rule

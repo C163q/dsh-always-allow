@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.2 - 2026-10-18
+
+### Fixed
+
+- The "allow forever" button was missing from ORDINARY approvals while working
+  on sandbox escalations. `permission-rules` answers `ask` by RETURNING, which
+  in a waterfall skips every listener after it — and this plugin's command
+  tracker was registered at normal priority, so it never recorded the call and
+  `/propose` answered `unknown-call`. Escalations hid the bug: they are raised
+  from inside the Tool body, after pre-execute completed, so the tracker had
+  already run. The tracker now prepends.
+
 ## v0.2.1 - 2026-10-18
 
 ### Fixed

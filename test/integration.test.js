@@ -302,3 +302,37 @@ test('the escalation listener mounts only when the rule engine is present', asyn
   )
   assert.equal(other, 'unavailable', 'an ordinary ask is still delegated')
 })
+
+test('a command is tracked even when an EARLIER listener answers ask', async (t) => {
+  const cordis = await loadCordis()
+  if (cordis === undefined) {
+    t.skip('harness checkout not available for the Cordis import')
+    return
+  }
+  const workspace = await mkdtemp(join(tmpdir(), 'always-allow-'))
+  t.after(() => rm(workspace, { recursive: true, force: true }))
+
+  const { Context } = cordis
+  const app = new Context()
+  const webServer = fakeWebServer()
+  app.provide('webServer', webServer)
+  app.provide('connection', { requestRejection: () => undefined })
+  app.provide('tools', {})
+
+  // An upstream listener that ANSWERS ask without calling next(), exactly like
+  // permission-rules on a rule hit. This is the ordering that used to hide the
+  // forever button: the tracker never ran, so /propose answered unknown-call.
+  app.on('tools/pre-execute', (exec) => Promise.resolve({ kind: 'ask', reason: 'needs confirmation' }))
+
+  const fiber = app.plugin({ name: plugin.name, inject: plugin.inject, apply: plugin.apply })
+  await fiber
+
+  const route = webServer.routes.find((entry) => entry.path === plugin.CHANNEL)
+  const decision = await app.waterfall('tools/pre-execute', shellExec('call-ask', 'touch /tmp/x', workspace), () => Promise.resolve({ kind: 'allow' }))
+  assert.deepEqual(decision, { kind: 'ask', reason: 'needs confirmation' }, 'the upstream ask still wins')
+
+  const proposal = await callRoute(route, { url: `${plugin.CHANNEL}/propose`, body: { callId: 'call-ask' } })
+  assert.equal(proposal.status, 200)
+  assert.equal(proposal.body.ok, true, 'the command was tracked despite the upstream short-circuit')
+  assert.equal(proposal.body.command, 'touch')
+})
