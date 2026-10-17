@@ -189,6 +189,40 @@ The integration tests mount the plugin the way the Loader does and skip
 cleanly when the harness checkout is not present. Point them at a different
 checkout with `DSH_CORDIS_PATH=/path/to/deepseek-harness/vendor/cordis/lib/index.js`.
 
+### Live verification
+
+Unit tests cannot see the failures this plugin actually had. A pending `inject`
+freezes the row, an inactive entry never enters the client boot graph, and a
+panel that throws leaves an *empty* composer — all three look identical to "the
+plugin is not installed", and none of them is visible to `node --test`.
+
+`scripts/` drives a real `dsh web` in a real Chromium instead:
+
+```sh
+scripts/check_all.sh          # enablement, boot, panel render, rule save
+scripts/probe.sh              # just: is this plugin actually active?
+scripts/boot.sh --port 4170   # start an instance and record it in .tmp/
+scripts/approval_test.sh      # raise a real approval, assert the three buttons
+scripts/save_test.sh          # click always-allow, assert the rule was written
+scripts/screenshot.sh         # capture the page (--selector for one element)
+scripts/rules.sh list         # show the saved rules in this workspace
+scripts/rules.sh prune --plugin-saved   # remove the rules this plugin wrote
+scripts/rules.sh clear        # remove every rule
+```
+
+A saved `allow` rule is **sticky**: once it exists, `dsh-permission-rules` stops
+asking about that command, so a re-run of the panel test would see no approval at
+all. `approval_test.sh --prune` and `save_test.sh --prune` clear this plugin's own
+rules first for that reason, and `check_all.sh` passes `--prune` for both.
+Pruning is surgical — only the matching rule blocks are dropped, so comments
+elsewhere in the file survive.
+
+`approval_test.sh` requests `sandbox_permissions` in its prompt, because that is
+what raises the approval waterfall; a plain read never does. Required: Python
+Playwright and a system Chromium (override the path with `PLAYWRIGHT_CHROMIUM`).
+Each script exits non-zero on failure and prints the browser console errors,
+which is how the missing `resolveReason` and `renderSlot` props were found.
+
 ```
 src/index.js        plugin entry: command tracking, route, atomic rule append
 src/prefix.js       pure prefix derivation + refusal vocabulary
@@ -197,6 +231,7 @@ src/endpoints.js    transport-neutral propose/save operations
 src/config.js       config resolution and defaults
 src/client.js       browser bundle: the approval panel takeover
 test/               node:test suites
+scripts/            live verification against a real browser
 docs/               rule format, troubleshooting, and PITFALLS.md
 ```
 

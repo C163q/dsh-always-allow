@@ -216,3 +216,36 @@ from the **server** cwd, so a write into the session workspace is denied with
 **Rule:** resolve `sandboxPolicy.resolve({ session })` and pass it through, or
 write the file directly — this plugin appends to a rule file with `node:fs`,
 which needs no policy at all.
+
+## 16. `renderSlot` and `resolveReason` are contract props, not extras
+
+Two props of the approval takeover are easy to drop because the panel type is a
+wide `PropsRuntime` union:
+
+- **`renderSlot`** exists only when the entry *declares* its children. Remove the
+  `children` declaration (correct, when the stock entry already owns that child
+  slot) and `renderSlot` disappears with it — so calling it throws.
+- **`resolveReason`** comes from `inject`, exactly like `t`. An approval that
+  carries a `displayReason` resolves through it, so omitting it throws on
+  escalated approvals only — the plain `reason` path still renders.
+
+Either throw happens *inside the takeover*, so React unmounts the whole entry and
+the composer renders **empty**: no card, no error in the UI, and the stock panel
+does not come back because the entry is still elected.
+
+The correct shape avoids both: inject `resolveReason`
+(`(reason) => locale.resolveText(reason)`, as the stock registration does), and
+recover the command from the Chat snapshot with `useChat`, the way the shipped
+`ApprovalCommand` detail renderer already does — no child slot, no `renderSlot`.
+
+## 17. A takeover that throws is worse than no plugin
+
+An added banner that fails renders nothing: the feature is merely absent. A
+*replacement* that fails removes the stock UI, so the user loses the ability to
+answer the approval at all — which is strictly worse than not installing the
+plugin.
+
+**Rule:** take over a chain slot only when the feature genuinely needs the whole
+card, and assert the rendered result in a browser before shipping. `scripts/`
+exists for exactly this: `approval_test.sh` fails loudly when the card is missing
+*or* the composer came back empty, which is the signature of this failure.

@@ -75,3 +75,18 @@ test('appending twice keeps a single rules key', () => {
   assert.equal(keys.length, 1)
   assert.ok(text.indexOf('ONE') < text.indexOf('TWO'))
 })
+
+test('an empty flow list is filled in place instead of being refused', () => {
+  // `rules: []` is what a prune-to-empty leaves behind. Refusing it would make
+  // the file parse fine while the plugin could never save again.
+  for (const text of ['rules: []\n', 'rules: []', 'rules: [ ]\n']) {
+    const out = insertRule(text, 'RULE')
+    assert.match(out, /^rules:$/m, `"${text.trim()}" becomes a block list`)
+    assert.match(out, /RULE/, 'the rule is present')
+    assert.doesNotMatch(out, /\[\s*\]/, 'no empty flow list survives')
+  }
+})
+
+test('a non-empty flow list is still refused', () => {
+  assert.throws(() => insertRule('rules: [{match: {}}]', 'RULE'), /flow-style/)
+})

@@ -5,3 +5,7 @@ node_modules/
 # Local scratch
 .dsh/
 .DS_Store
+
+# live-verification scratch
+.tmp/
+__pycache__/

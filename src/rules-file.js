@@ -48,15 +48,25 @@ export function renderRule(proposal, reason, toolNames) {
  * An existing body keeps its comments and order, and the new entry is
  * APPENDED so any earlier, narrower `deny` or `ask` rule still wins on the
  * engine's first-match basis.
+ *
+ * An EMPTY flow list (`rules: []`) is treated as an empty document and filled
+ * in place: it carries no entries, so there is nothing to corrupt, and
+ * refusing it would leave a pruned file permanently unwritable — the file
+ * would parse fine, the plugin would simply never save again.
  * @param {string} text - current file contents (may be empty).
  * @param {string} ruleText - rule block from {@link renderRule}.
  * @returns {string} the new document.
- * @throws when the file uses flow-style `rules: [...]`, which is not rewritten.
+ * @throws when the file uses a non-empty flow-style `rules: [...]`, which is
+ * not rewritten.
  */
 export function insertRule(text, ruleText) {
   const body = String(text ?? '').trimEnd()
   if (body.trim() === '') return `rules:\n${ruleText}\n`
   if (/^rules:\s*$/m.test(body)) return `${body}\n${ruleText}\n`
+  // `rules: []` / `rules: [ ]` — an empty flow sequence, same as no rules.
+  if (/^rules:\s*\[\s*\]\s*$/m.test(body)) {
+    return `${body.replace(/^rules:\s*\[\s*\]\s*$/m, 'rules:')}\n${ruleText}\n`
+  }
   if (/^rules:\s*[^\s#]/m.test(body)) {
     throw new Error('the rule file uses flow-style "rules: [...]", which this plugin will not rewrite')
   }

@@ -164,6 +164,36 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Read the shell command of the Tool call correlated with an approval.
+     *
+     * This mirrors the shipped `ApprovalCommand` detail renderer: the command
+     * is recovered from the Chat snapshot rather than from the approval request,
+     * which carries only `toolName` and `callId`.
+     * @param props - panel props, providing the Session-standard Chat hook.
+     * @param callId - correlated Tool call id, when the asker supplied one.
+     * @returns the command text, or undefined when no correlated call carries one.
+     */
+    function useApprovalCommand(props, callId) {
+      const useChat = props.useChat
+      if (typeof useChat !== 'function' || callId === undefined) return undefined
+      return useChat((snapshot) => {
+        for (const node of snapshot.nodes.values()) {
+          if (node.kind !== 'tool-call') continue
+          const root = node.data?.root
+          if (root === undefined || root.callId !== callId || 'kind' in root) continue
+          if (root.phase !== 'start' || typeof root.argsRaw !== 'string') continue
+          try {
+            const args = JSON.parse(root.argsRaw)
+            if (typeof args.command === 'string') return args.command
+          } catch {
+            return undefined
+          }
+        }
+        return undefined
+      })
+    }
+
+    /**
      * The approval card with a third decision: always allow this command.
      *
      * It replaces the stock `conversation.composer` entry, so it reproduces that
@@ -245,7 +275,14 @@ window.__ModuleLoader__.load({
         ? approval.reason
         : props.resolveReason(approval.displayReason)
       const headline = reason ?? format(t('escalation'), { toolName: approval.toolName })
-      const detail = callId === undefined ? null : props.renderSlot('conversation.approval.detail', { callId })
+      // The command comes from the Chat snapshot, exactly as the shipped
+      // `ApprovalCommand` detail renderer does. `renderSlot` is NOT used here:
+      // the children-declaration that provides it belongs to the stock entry,
+      // and a second declaration of that child slot throws.
+      const command = useApprovalCommand(props, callId)
+      const detail = typeof command === 'string' && command.length > 0
+        ? h('div', { className: 'always-allow__command' }, command)
+        : null
 
       const foreverLabel = proposal.status === 'ready'
         ? `${t('allowForever')} ${proposal.proposal.command}${proposal.proposal.args.length > 0 ? ` ${proposal.proposal.args.join(' ')}` : ''}*`
@@ -258,7 +295,7 @@ window.__ModuleLoader__.load({
             t('waiting')),
           h('div', { className: 'always-allow__body', role: 'group', 'aria-label': t('detail.aria') },
             h('div', { className: 'always-allow__headline' }, headline),
-            detail === null ? null : h('div', { className: 'always-allow__command' }, detail)),
+            detail),
           h('div', { className: 'always-allow__row' },
             note === undefined
               ? null
@@ -289,9 +326,16 @@ window.__ModuleLoader__.load({
 
     /**
      * Inject the panel's data face.
+     *
+     * `resolveReason` is part of the approval contract, not an optional extra:
+     * a request that carries a `displayReason` is resolved through it, and the
+     * stock registration supplies it alongside `t`. Omitting it throws while
+     * rendering the escalated-approval path, and React tears the takeover down,
+     * leaving an empty composer with no card at all.
      * @param bind - locale binder for this dictionary.
+     * @param resolve - resolves requester-owned localized copy.
      */
-    const panelInject = (bind) => () => ({ t: bind })
+    const panelInject = (bind, resolve) => () => ({ t: bind, resolveReason: resolve })
 
     /**
      * Browser plugin body.
@@ -316,7 +360,10 @@ window.__ModuleLoader__.load({
         select: ({ pendingInteraction }) =>
           (pendingInteraction?.kind === 'approval' ? pendingInteraction : null),
         locale: NS,
-        inject: panelInject(locale.bind(NS)),
+        inject: panelInject(
+          locale.bind(NS),
+          (reason) => locale.resolveText(reason),
+        ),
         // `conversation.approval.detail` is deliberately NOT declared here: the
         // stock approval entry already owns that child slot, and a slot can be
         // declared only once — a second declaration throws at registration.

@@ -1,32 +1,45 @@
 # Changelog
 
+## v0.1.1
+
+### Fixed
+
+- The browser half never loaded. It took over `conversation.composer` but
+  declared `conversation.approval.detail` as a child slot, which the stock
+  approval entry already owns, so registration threw and the whole half failed.
+  The command is now read from the Chat snapshot the way the shipped
+  `ApprovalCommand` detail renderer does, so no child slot is claimed.
+- The panel threw while rendering an approval that carried a `displayReason`,
+  because `resolveReason` was missing from the injected face. `renderSlot` was
+  also called without the children declaration that provides it. Both replaced:
+  `resolveReason` is injected, and the command comes from `useChat`.
+- The host half was permanently pending: `inject` declared `connection`, which
+  the composing tree does not always provide before this row. Only `webServer`
+  is declared now; the trust check reads `connection` lazily per request.
+- The approval panel is now reached at all: it registers in
+  `conversation.composer` at priority 0 and elects only while an approval is
+  pending, instead of rendering a banner in `conversation.input.dock` that no
+  approval ever showed.
+
+### Added
+
+- `scripts/` live verification: `check_all.sh`, `probe.sh`, `boot.sh`,
+  `approval_test.sh`, `save_test.sh`, `screenshot.sh`. These drive a real
+  `dsh web` in Chromium, because every failure above was invisible to unit
+  tests.
+- `docs/PITFALLS.md` records the Harness traps that fail silently.
+
 ## v0.1.0
 
 ### Added
 
-- Approval strip offering **"Always allow `<prefix>`"** for pending shell Tool
-  approvals, rendered in `conversation.input.dock` with `zh`/`en` copy.
+- Approval panel offering **"Always allow `<prefix>`"** for pending shell Tool
+  approvals, with `zh`/`en` copy.
 - Prefix derivation (`src/prefix.js`): one command word, plus exactly one
   literal subcommand when the command's meaning lives in its first argument.
   Refusals carry a stable code (`empty`, `unsafe`, `compound`, `too-broad`,
-  `never`) so the strip can explain a missing button.
-- Atomic, serialized append into the workspace rule file read by
-  `dsh-permission-rules` (`src/rules-file.js`, `src/index.js`).
-- Plugin-owned `/always-allow` route on `ctx.webServer`, admitted through the
-  Connection trust check (`src/index.js`).
-- Config: `rulesFile`, `toolNames`, `maxTracked`, validated at mount
-  (`src/config.js`).
-- `node:test` suites for prefix derivation, rule rendering, endpoints, config,
-  and a real-Cordis integration test covering mount, event tracking, both
-  endpoints, authentication, method handling, and config failure.
-
-### Notes
-
-- The plugin never answers an approval and never evaluates a rule: it returns
-  the neutral `{kind: 'allow'}` passthrough so `dsh-permission-rules` remains
-  the only authority.
-- The route is registered on this plugin's own `ctx.webServer` rather than
-  through `connection.rpc.handle()`. `HostConnectionService` binds its routes on
-  the provider's context, which does not declare `webServer`, so the generic
-  channel fails activation with `cannot get property "webServer" without inject`
-  for every consumer plugin.
+  `never`) so the panel can explain a missing button.
+- Rule append (`src/rules-file.js`) into the workspace rule file
+  `dsh-permission-rules` already reads, preserving existing rules and comments.
+- `/always-allow` host route (`propose`, `save`) behind the Connection trust
+  check, with a bounded map of pending approvals.
