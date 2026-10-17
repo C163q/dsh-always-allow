@@ -13,8 +13,6 @@ It is how [Codex handles approvals](https://learn.chatgpt.com/docs/agent-approva
 [opencode's `always`](https://opencode.ai/docs/zh-cn/permissions/) behaves, on
 top of this harness's existing declarative rule engine.
 
-[中文说明](./README.zh.md)
-
 ---
 
 ## What you see
