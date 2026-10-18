@@ -84,6 +84,18 @@ Set `autoApproveEscalation: false` to stop all automatic grants. Remove or narro
 
 The ledger is host policy: backing up a workspace alone does not transfer host access to another workspace or machine.
 
+## File responsibilities
+
+- `src/index.js`: plugin entry, call and approval lifecycles, HTTP admission, and atomic rule writes.
+- `src/prefix.js`: pure command-prefix derivation, syntax restrictions, excluded commands, and executable-path risk metadata.
+- `src/escalation.js`: automatic escalation decisions using current policy and host authorization together.
+- `src/grants.js`: host authorization records stored outside the workspace.
+- `src/endpoints.js`: propose/save operations for pending approvals, one-shot tokens, and explicit risk acknowledgement.
+- `src/rules-file.js`: rule serialization and YAML document edits that preserve comments and order.
+- `src/client.js`: browser module loaded through `window.__ModuleLoader__`; uses platform-provided React without a separate build step.
+- `test/`: Node tests that verify permission semantics with real Cordis and the permission-rules compiler/matcher.
+- `scripts/`: isolated Web instances, Playwright/Chromium checks, and session-event verification.
+
 ## Verify
 
 ```sh

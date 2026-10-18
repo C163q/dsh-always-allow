@@ -4,22 +4,10 @@ These instructions apply to this repository and its subdirectories. `dsh-always-
 
 ## Read first
 
-- [README.md](README.md): installation, configuration, authorization scope, and revocation.
+- [README.md](README.md): installation, configuration, authorization scope, revocation, and [file responsibilities](README.md#file-responsibilities).
 - [docs/rules-format.md](docs/rules-format.md): semantics of the rules this plugin generates.
 - [docs/PITFALLS.md](docs/PITFALLS.md): historical Cordis and Web integration pitfalls; source code and README define current behavior.
 - [docs/verification/](docs/verification/): dated verification records. Historical passing results do not verify current changes.
-
-## File responsibilities
-
-- `src/index.js`: plugin entry, call and approval lifecycles, HTTP admission, and atomic rule writes.
-- `src/prefix.js`: pure command-prefix derivation, syntax restrictions, excluded commands, and executable-path risk metadata.
-- `src/escalation.js`: automatic escalation decisions using current policy and host authorization together.
-- `src/grants.js`: host authorization records stored outside the workspace.
-- `src/endpoints.js`: propose/save operations for pending approvals, one-shot tokens, and explicit risk acknowledgement.
-- `src/rules-file.js`: rule serialization and YAML document edits that preserve comments and order.
-- `src/client.js`: browser module loaded through `window.__ModuleLoader__`; uses platform-provided React without a separate build step.
-- `test/`: Node tests that verify permission semantics with real Cordis and the permission-rules compiler/matcher.
-- `scripts/`: isolated Web instances, Playwright/Chromium checks, and session-event verification.
 
 ## Required security invariants
 
@@ -54,6 +42,6 @@ For documentation-only changes or file reorganization, check references and `git
 
 ## Documentation and local data
 
-Update README, relevant rule documentation, and CHANGELOG when behavior changes. Store verification records in `docs/verification/` and designs/plans in `docs/superpowers/`. Keep local screenshots, session reports, and probes in `.tmp/`. Never commit authentication tokens, credentials, host authorization records, or test profiles.
+Maintain file responsibilities in README only; do not duplicate that inventory here. Update README, relevant rule documentation, and CHANGELOG when behavior changes. Store verification records in `docs/verification/` and designs/plans in `docs/superpowers/`. Keep local screenshots, session reports, and probes in `.tmp/`. Never commit authentication tokens, credentials, host authorization records, or test profiles.
 
 The user's daily profile, isolated test profiles, harness source, and permission-rules source are separate locations. Do not write test settings into the user's daily configuration. Keep cross-repository work within the current task's authorization and read the target repository's AGENTS.md before editing it. Never weaken authorization checks or silently prune existing user rules to make tests pass.
