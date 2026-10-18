@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.3.0 - 2026-10-18
+
+- Rebuild automatic escalation approval around live call identity, exact current arguments, the engine's first-match compiler/matcher, and a separate host authorization ledger.
+- Legacy allow rules no longer imply host access; a new explicit click is required. New rules constrain raw command prefixes, word boundaries, and safe plain-command syntax instead of unordered argv tokens.
+- Refuse missing admission, unavailable/dry-run rule engines, forged or misplaced grants, stale/withdrawn saves, and overlapping call ids. Fresh compilation prevents stale allows after file or compile-option changes.
+- Preserve YAML comments and rule order through AST edits; safely serialize scalars and tools; validate before atomic commit. Disable conflicting controls during save and display the host-access scope.
+- Add real-engine regression tests and a Chromium verification script that checks durable approval and tool completion events.
+
+
 ## v0.2.2 - 2026-10-18
 
 ### Fixed

@@ -1,60 +1,27 @@
 # Troubleshooting
 
-## No strip appears at all
+## No permanent-approval button
 
-In order:
+Check that both plugins are installed and enabled in the same profile. dshmarket keeps its own disabled list in `$DSH_HOME/profiles/web/.dsh-market/state.json`; an enabled YAML row does not override that list. In a profile previously affected by proxy rewriting, explicitly disable permission-rules' `network.enabled` and `network.injectEnv` before enabling it.
 
-1. **Is `dsh-permission-rules` installed and enabled?** This plugin only writes
-   its rule file. Check with `dsh --profile web --dump-config` that the
-   `permission-rules` row is present and not `disabled: true`.
-2. **Did the plugin activate?** Start the profile and watch stderr. A failed
-   row prints `always-allow (dsh-always-allow): Error: …`. A silent absence
-   usually means the row is not in the composed config — check for
-   `skipping profile bundle "dsh-always-allow"`.
-3. **Is the pending tool one of `toolNames`?** Only `bash` and `pwsh` by
-   default. Approving a `read` or an MCP tool will never show the strip.
+The `/always-allow` route refuses requests when Connection admission is missing, permission-rules is absent or in dry-run mode, or the two rule paths differ. A 401/403 means admission failed; reopen the launch URL for the exact host/port. A 503 means a required service or configuration is unavailable. Save errors display their reason in the card.
 
-## The strip says the approval already ended
+Only a currently pending tracked shell approval can offer a prefix. Finished, cancelled, evicted, agentless, ambiguous duplicate-id, and non-shell calls have no writable approval. Refused compound, quoted, escaped, multiline, path-command, or excluded commands show an explanation; approve those one call at a time.
 
-The pending approval was answered (or the session moved on) between the render
-and the click. Nothing was written; refusing here is intentional.
+## Saving works but a later escalation asks again
 
-## The strip explains why there is no button
+- Enable `autoApproveEscalation: true`; its default is false.
+- Save while the actual target is `danger-full-access`. Saving an ordinary pre-execute approval does not grant host access.
+- Legacy `argv` allow entries have no host authorization. Click again on a current escalation to create an explicit grant.
+- Inspect earlier rules: a first-match deny/ask still prevents automatic approval. A preceding ordinary allow requires a separate matching explicit grant and host-ledger record.
+- Keep the workspace, tool, and rule-file path the same. A grant for bash does not grant pwsh access.
+- Ensure DSH_HOME and its authorization ledger are outside the workspace and OS temporary writable roots. A missing or corrupt ledger never authorizes anything.
+- Current rule bytes and compile configuration are checked on each escalation; malformed edits and live pattern-mode changes can require human approval even if the engine's ordinary cache retains an old rule.
 
-That is the refusals table in the README working as designed. `never`,
-`compound`, `unsafe`, and `too-broad` all mean "a prefix from this command
-would cover more than you approved". Approve one call at a time instead.
+If a save reports that its approval or file changed, retry from the current card. The plugin refuses stale writes instead of overwriting newer policy.
 
-## A saved rule does not take effect
+## Verify the real Web flow
 
-- **Wrong file.** The plugin writes `rulesFile` resolved against the *session
-  workspace*. If your `permission-rules` row points somewhere else, the rule
-  lands where nothing reads it. Both default to `.dsh/rules.yaml`.
-- **A narrower rule wins first.** Rules evaluate first-match, and this plugin
-  appends. Look for an earlier `deny` or `ask`.
-- **The workspace differs.** A rule saved in one workspace does not apply to
-  another directory.
+Use `scripts/boot.py` and `scripts/verify_flow.py` as documented in README. The latter checks durable outcomes; a hidden card alone is not evidence of approval. Local HTTP probes bypass ambient HTTP proxies, while the browser runs through Chromium. Screenshots and the report are under `.tmp/browser/`.
 
-## "the rule file uses flow-style `rules: [...]`"
-
-The existing document is flow style. Convert it to block style:
-
-```yaml
-rules:
-  - match: { tools: [bash], argv: { command: "ls" } }
-    action: allow
-    reason: "…"
-```
-
-## Every Tool call now fails with a rule-file error
-
-That is `badFilePolicy: fail` doing its job: the rule document no longer
-parses, so the engine refuses rather than silently allowing. Fix the YAML — or
-delete the file to restore stock behaviour, then re-add rules.
-
-## Requests are refused with 401 / "not authorized"
-
-The `/always-allow` route applies the same admission as `/api`. A 401 means
-the browser session is not authenticated for this host (an expired session, or
-a request through a different origin). Reload the page using the tokenized URL
-the CLI printed.
+The test profile must be isolated and must keep earlier rules from shadowing the test prefix. Use a harmless test command and review test prompts before selecting a paid model. No rule pruning is needed for `verify_flow.py` when a clean isolated rules file is used.

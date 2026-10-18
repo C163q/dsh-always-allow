@@ -22,7 +22,7 @@ export const MAX_BODY_BYTES = 4096
 export const DEFAULT_MAX_TRACKED = 128
 
 /**
- * Whether a saved `allow` rule also answers a sandbox-escalation approval.
+ * Whether new explicit prefix grants may answer danger-full-access approvals.
  *
  * OFF by default, and deliberately so: a rule says "this command may run", not
  * "this command may leave the sandbox". Treating the first as the second would
@@ -37,7 +37,7 @@ export const DEFAULT_AUTO_APPROVE_ESCALATION = false
  * @property {string} [rulesFile]    Rule file the `permission-rules` row reads.
  * @property {string[]} [toolNames]  Shell Tool names carrying a `command` argument.
  * @property {number} [maxTracked]   Pending approvals remembered at once.
- * @property {boolean} [autoApproveEscalation] Also answer sandbox escalations.
+ * @property {boolean} [autoApproveEscalation] Enable new explicit host-access prefix grants.
  */
 
 /**

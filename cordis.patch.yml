@@ -2,9 +2,8 @@
 # to the workspace rule file. The browser half is mounted by the Loader from the
 # `dsh.client` field in package.json.
 #
-# `dsh-permission-rules` must already be installed and enabled in the same
-# profile: this plugin only WRITES its rule file and never re-evaluates rules,
-# so a saved rule has no effect without that row.
+# dsh-permission-rules must be installed and enabled in the same profile.
+# This plugin uses its public compiler/matcher and live ordered source chain.
 #
 # A patch row replaces the WHOLE config of a row it targets, so a profile that
 # wants different values restates every key it keeps.
@@ -23,11 +22,7 @@
           - pwsh
         # How many pending approvals are remembered for the browser half.
         maxTracked: 128
-        # Also answer SANDBOX-ESCALATION approvals from a saved allow rule.
-        #
-        # A rule says "this command may run"; an escalation asks "may this call
-        # leave the sandbox". Treating the first as the second grants full host
-        # access to anything a saved prefix covers, so this is opt-in. Requires
-        # dsh-permission-rules to be installed and enabled: this plugin reads
-        # its compiled rules rather than parsing rule files itself.
+        # Enable new explicit danger-full-access prefix grants. Old rules do
+        # not gain host access. Grants require a host ledger outside every
+        # model-writable directory; see README before enabling.
         autoApproveEscalation: false

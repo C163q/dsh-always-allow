@@ -17,7 +17,11 @@
  * refused outright rather than escaped — an allow rule must never come from a
  * fragment whose meaning depends on quoting.
  */
-export const SAFE_WORD = /^[A-Za-z0-9_@%+=:,./-]+$/
+export const SAFE_WORD = /^[A-Za-z0-9_@+=:,./-]+$/
+
+/** Shared character grammar for plain, unquoted command strings. */
+export const COMMAND_CHARS = 'A-Za-z0-9_@+=:,./ -'
+export const SAFE_COMMAND = new RegExp(`^[${COMMAND_CHARS}]+$`)
 
 /**
  * Commands whose meaning lives in their first argument. Allowing bare `npm`
@@ -39,7 +43,9 @@ export const NEEDS_SUBCOMMAND = new Set([
  */
 export const NEVER_PREFIXABLE = new Set([
   'sudo', 'doas', 'su', 'pkexec', 'eval', 'exec', 'source', '.',
-  'sh', 'bash', 'zsh', 'fish', 'dash', 'ksh', 'csh', 'tcsh',
+  'command', 'builtin', 'time', 'coproc', 'function', 'alias', 'unalias',
+  'export', 'declare', 'typeset', 'local', 'readonly', 'set', 'trap', 'fc',
+  'sh', 'bash', 'zsh', 'fish', 'dash', 'ksh', 'csh', 'tcsh', 'pwsh', 'powershell', 'cmd',
   'xargs', 'env', 'nice', 'nohup', 'timeout', 'watch', 'parallel', 'find',
   'rm', 'rmdir', 'unlink', 'shred', 'dd', 'mkfs', 'fdisk', 'parted', 'truncate',
   'chmod', 'chown', 'chgrp', 'setfacl', 'mount', 'umount', 'iptables', 'nft',
@@ -90,14 +96,14 @@ export function proposeRule(command) {
       message: `"${word}" runs behind an environment assignment, so a prefix rule would not describe it`,
     }
   }
-  if (!SAFE_WORD.test(word) || word.startsWith('-')) {
+  if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(word)) {
     return {
       ok: false,
       code: 'unsafe',
       message: `"${word}" contains shell or glob syntax, so it cannot be saved as a literal prefix`,
     }
   }
-  if (NEVER_PREFIXABLE.has(word)) {
+  if (NEVER_PREFIXABLE.has(word.toLowerCase())) {
     return {
       ok: false,
       code: 'never',
@@ -106,7 +112,8 @@ export function proposeRule(command) {
   }
   // A compound line can hide an arbitrary second command in the part a prefix
   // would not cover, so it is saved for nothing but its head word.
-  const compound = OPERATORS.test(command)
+  const compound = !SAFE_COMMAND.test(command)
+    || OPERATORS.test(command)
     || /"[^"]*\s[^"]*"/.test(command)
     || /'[^']*\s[^']*'/.test(command)
   if (compound) {
@@ -117,7 +124,7 @@ export function proposeRule(command) {
     }
   }
   const args = []
-  if (NEEDS_SUBCOMMAND.has(word)) {
+  if (NEEDS_SUBCOMMAND.has(word.toLowerCase())) {
     const sub = rest[0]
     if (sub === undefined) {
       return {

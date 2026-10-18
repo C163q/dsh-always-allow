@@ -1,338 +1,130 @@
-/**
- * Integration test: mount the real plugin in a real Cordis context.
- *
- * This is the test that would have caught the two failures this plugin was
- * written through: a route registered on a context that did not declare
- * `webServer`, and an `inject` declaration dropped by the Loader's export
- * unwrapping. Both show up here as a failed mount or a missing route.
- */
-
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { test } from 'node:test'
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { test } from 'node:test'
-
+import { Context } from '@deepseek-ai/cordis'
+import { PermissionRulesRuntime, resolveConfig } from 'dsh-permission-rules'
+import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import * as plugin from '../src/index.js'
 
-const CORDIS = process.env.DSH_CORDIS_PATH
-  ?? '/home/c163q/Program/fetch/deepseek-harness/vendor/cordis/lib/index.js'
-
-/** Skip cleanly when the harness checkout is not available. */
-async function loadCordis() {
-  try {
-    return await import(CORDIS)
-  } catch {
-    return undefined
-  }
-}
-
-/** A fake webServer that records routes the way the real one dispatches them. */
-function fakeWebServer() {
+async function setup(t, config = {}) {
+  await mkdir(join(process.cwd(), '.tmp'), { recursive: true })
+  const root = await mkdtemp(join(process.cwd(), '.tmp/aa-integration-'))
+  const cwd = join(root,'workspace'); await mkdir(cwd)
+  const home = join(root,'home')
+  const oldHome = process.env.DSH_HOME; process.env.DSH_HOME = home
+  t.after(async () => { if(oldHome === undefined) delete process.env.DSH_HOME; else process.env.DSH_HOME=oldHome; await rm(root,{recursive:true,force:true}) })
+  const app = new Context()
   const routes = []
-  return {
-    routes,
-    register(route) {
-      if (routes.some((entry) => entry.path === route.path)) throw new Error(`duplicate route ${route.path}`)
-      routes.push(route)
-      return () => { routes.splice(routes.indexOf(route), 1) }
-    },
-    registerUpgrade() { return () => {} },
+  app.provide('webServer', { register(route) { routes.push(route); return () => routes.splice(routes.indexOf(route),1) } })
+  app.provide('connection', {requestRejection: req => req.headers.cookie === 'trusted' ? undefined : 401})
+  const file = join(cwd,'rules.yaml')
+  const engine = new PermissionRulesRuntime(app, resolveConfig({ rulesFile:file, watch:false, builtin:{enabled:false}, network:{enabled:false, injectEnv:false} }))
+  app.provide('permissionRulesRuntime',engine)
+  app.on('tools/pre-execute',(exec,next)=>engine.preExecute(exec,next))
+  const fiber = app.plugin({name:plugin.name, inject:plugin.inject, apply:plugin.apply}, {rulesFile:file,autoApproveEscalation:true,...config})
+  await fiber
+  t.after(()=>fiber.dispose())
+  const agent = {session:{header:{id:'s1',cwd,origin:'main'}}}
+  const exec = {agent,callId:'c1',name:'bash',arguments:{command:'git status --short', sandbox_permissions:'danger-full-access',justification:'test'},signal:new AbortController().signal}
+  const req = {agent,callId:'c1',toolName:'bash',reason:'escalate sandbox to danger-full-access: test',signal:exec.signal}
+  const flow = (event, value, next) => app.waterfall(scopeTarget(agent,agent),event,value,next)
+  const route = routes[0]
+  async function http(endpoint,body,headers={cookie:'trusted'}) {
+    let result
+    await route.handler({method:'POST',url:'/always-allow/'+endpoint,headers,async *[Symbol.asyncIterator](){yield Buffer.from(JSON.stringify(body))}}, {writeHead(status){result={status}},end(text){result.body=JSON.parse(text)}})
+    return result
   }
+  return {app,root,cwd,home,file,engine,exec,req,flow,http,agent}
+}
+const identity = {sessionId:'s1',callId:'c1'}
+const settle = async () => { for(let i=0;i<12;i++) await Promise.resolve() }
+
+async function pendingApproval(f) {
+  let answer
+  const response = f.flow('approval/request',f.req,()=>new Promise(resolve=>{answer=resolve}))
+  await settle()
+  return {response,answer}
 }
 
-/** Drive one route the way node:http would, and resolve with the response. */
-function callRoute(route, { method = 'POST', url = route.path, body = {} } = {}) {
-  return new Promise((resolve, reject) => {
-    const payload = Buffer.from(JSON.stringify(body))
-    const req = {
-      method,
-      url,
-      async* [Symbol.asyncIterator]() { yield payload },
-    }
-    const res = {
-      statusCode: 0,
-      writeHead(code) { this.statusCode = code },
-      end(text) {
-        try {
-          resolve({ status: this.statusCode, body: JSON.parse(text) })
-        } catch (error) {
-          reject(error)
-        }
-      },
-    }
-    Promise.resolve(route.handler(req, res)).catch(reject)
+test('saving a live scoped approval enables the next matching escalation before browser forwarding',async t=>{
+  const f=await setup(t)
+  await f.flow('tools/pre-execute',f.exec,async()=>({kind:'allow'}))
+  await f.flow('tools/execute',f.exec,async()=>{
+    const pending=await pendingApproval(f)
+    const p=await f.http('propose',identity)
+    assert.equal(p.body.ok,true)
+    assert.equal(p.body.hostAccess,true)
+    const save=await f.http('save',{...identity,approvalToken:p.body.approvalToken,allowHost:true})
+    assert.equal(save.body.ok,true)
+    assert.match(await readFile(f.file,'utf8'),/dsh-always-allow\/v1\/danger-full-access/)
+    pending.answer('allowed-once'); assert.equal(await pending.response,'allowed-once')
+    return {}
   })
-}
-
-/** A shell Tool execution the way the registry hands it to `tools/pre-execute`. */
-function shellExec(callId, command, cwd) {
-  return {
-    callId,
-    name: 'bash',
-    arguments: { command },
-    agent: { session: { header: { cwd, path: cwd } } },
-    signal: new AbortController().signal,
-  }
-}
-
-test('the plugin mounts, tracks a shell call, and serves both endpoints', async (t) => {
-  const cordis = await loadCordis()
-  if (cordis === undefined) {
-    t.skip('harness checkout not available for the Cordis import')
-    return
-  }
-  const workspace = await mkdtemp(join(tmpdir(), 'always-allow-'))
-  t.after(() => rm(workspace, { recursive: true, force: true }))
-
-  const { Context } = cordis
-  const app = new Context()
-  const webServer = fakeWebServer()
-  app.provide('webServer', webServer)
-  // The route applies the Connection trust check; an always-accepting stub
-  // stands in for an authenticated browser session.
-  app.provide('connection', { requestRejection: () => undefined })
-  app.provide('tools', {})
-
-  // Mount exactly as the Loader does: the namespace object, whose `apply`
-  // carries the inject declaration.
-  const fiber = app.plugin({ name: plugin.name, inject: plugin.inject, apply: plugin.apply })
-  await fiber
-
-  const route = webServer.routes.find((entry) => entry.path === plugin.CHANNEL)
-  assert.ok(route, 'the plugin registered its own route')
-  assert.equal(webServer.routes.length, 1)
-
-  // A pre-execute listener must never tighten or loosen the decision. This
-  // assertion used to expect `allow`, which encoded the bug: the plugin
-  // returned its own decision instead of delegating, so in a waterfall it
-  // vetoed every later listener and `permission-rules` could never deny or ask.
-  // The downstream decision MUST survive.
-  const decision = await app.waterfall('tools/pre-execute', shellExec('call-1', 'git status --short', workspace), () => Promise.resolve({ kind: 'ask' }))
-  assert.deepEqual(decision, { kind: 'ask' }, 'the plugin delegates instead of deciding')
-  const denied = await app.waterfall('tools/pre-execute', shellExec('call-2', 'rm -rf /', workspace), () => Promise.resolve({ kind: 'deny', reason: 'blocked' }))
-  assert.deepEqual(denied, { kind: 'deny', reason: 'blocked' }, 'a downstream deny is not overridden')
-
-  const proposal = await callRoute(route, { url: `${plugin.CHANNEL}/propose`, body: { callId: 'call-1' } })
-  assert.equal(proposal.status, 200)
-  assert.deepEqual(proposal.body, { ok: true, command: 'git', args: ['status'], label: 'git status' })
-
-  const saved = await callRoute(route, { url: `${plugin.CHANNEL}/save`, body: { callId: 'call-1' } })
-  assert.equal(saved.status, 200)
-  assert.equal(saved.body.ok, true)
-  assert.equal(saved.body.value.file, join(workspace, '.dsh/rules.yaml'))
-
-  const document = await readFile(join(workspace, '.dsh/rules.yaml'), 'utf8')
-  assert.match(document, /^rules:/)
-  assert.match(document, /tools: \[bash, pwsh\]/)
-  assert.match(document, /command: "git"/)
-  assert.match(document, /args: \["status"\]/)
-  assert.match(document, /action: allow/)
-
-  // The approval is consumed once saved.
-  const again = await callRoute(route, { url: `${plugin.CHANNEL}/propose`, body: { callId: 'call-1' } })
-  assert.equal(again.body.code, 'unknown-call')
-})
-
-test('a non-shell tool call is not tracked and offers no rule', async (t) => {
-  const cordis = await loadCordis()
-  if (cordis === undefined) {
-    t.skip('harness checkout not available for the Cordis import')
-    return
-  }
-  const app = new cordis.Context()
-  const webServer = fakeWebServer()
-  app.provide('webServer', webServer)
-  app.provide('connection', { requestRejection: () => undefined })
-  app.provide('tools', {})
-  await app.plugin({ name: plugin.name, inject: plugin.inject, apply: plugin.apply })
-  const route = webServer.routes[0]
-
-  await app.waterfall('tools/pre-execute', {
-    callId: 'read-1', name: 'read', arguments: { path: 'x' }, agent: undefined,
-  }, () => Promise.resolve({ kind: 'allow' }))
-
-  const result = await callRoute(route, { url: `${plugin.CHANNEL}/propose`, body: { callId: 'read-1' } })
-  assert.equal(result.body.code, 'unknown-call')
-})
-
-test('an unauthenticated request is refused and writes nothing', async (t) => {
-  const cordis = await loadCordis()
-  if (cordis === undefined) {
-    t.skip('harness checkout not available for the Cordis import')
-    return
-  }
-  const workspace = await mkdtemp(join(tmpdir(), 'always-allow-auth-'))
-  t.after(() => rm(workspace, { recursive: true, force: true }))
-
-  const app = new cordis.Context()
-  const webServer = fakeWebServer()
-  app.provide('webServer', webServer)
-  // Mirrors the real admit(): untrusted or unauthenticated requests get 401/403.
-  app.provide('connection', {
-    requestRejection: (req) => (req.headers?.cookie === undefined ? 401 : undefined),
+  assert.equal((await f.http('propose',identity)).body.ok,false)
+  f.exec.callId='c2'; f.req.callId='c2'
+  await f.flow('tools/pre-execute',f.exec,async()=>({kind:'allow'}))
+  let forwarded=false
+  await f.flow('tools/execute',f.exec,async()=>{
+    const outcome=await f.flow('approval/request',f.req,async()=>{forwarded=true;return 'human'})
+    assert.equal(outcome,'allowed-once'); return {}
   })
-  app.provide('tools', {})
-  await app.plugin({ name: plugin.name, inject: plugin.inject, apply: plugin.apply })
-  const route = webServer.routes[0]
-
-  await app.waterfall('tools/pre-execute', shellExec('call-1', 'ls', workspace), () => Promise.resolve({ kind: 'allow' }))
-
-  const refused = await callRoute(route, { url: `${plugin.CHANNEL}/save`, body: { callId: 'call-1' } })
-  assert.equal(refused.status, 401)
-  assert.equal(refused.body.ok, false)
-
-  await assert.rejects(readFile(join(workspace, '.dsh/rules.yaml'), 'utf8'), /ENOENT/)
+  assert.equal(forwarded,false)
 })
 
-test('a non-POST method is refused', async (t) => {
-  const cordis = await loadCordis()
-  if (cordis === undefined) {
-    t.skip('harness checkout not available for the Cordis import')
-    return
-  }
-  const app = new cordis.Context()
-  const webServer = fakeWebServer()
-  app.provide('webServer', webServer)
-  app.provide('connection', { requestRejection: () => undefined })
-  app.provide('tools', {})
-  await app.plugin({ name: plugin.name, inject: plugin.inject, apply: plugin.apply })
-
-  const result = await callRoute(webServer.routes[0], { method: 'GET', url: `${plugin.CHANNEL}/propose` })
-  assert.equal(result.status, 405)
+test('tracked calls alone do not permit saving and answered approvals expire',async t=>{
+  const f=await setup(t)
+  await f.flow('tools/pre-execute',f.exec,async()=>({kind:'allow'}))
+  assert.equal((await f.http('propose',identity)).body.ok,false)
+  const p=await pendingApproval(f)
+  const proposal=(await f.http('propose',identity)).body
+  p.answer('rejected'); await p.response
+  assert.equal((await f.http('save',{...identity,approvalToken:proposal.approvalToken,allowHost:true})).body.ok,false)
+  await assert.rejects(readFile(f.file),/ENOENT/)
 })
 
-test('an invalid config fails the mount loudly', async (t) => {
-  const cordis = await loadCordis()
-  if (cordis === undefined) {
-    t.skip('harness checkout not available for the Cordis import')
-    return
-  }
-  for (const config of [{ rulesFile: '' }, { toolNames: [] }, { maxTracked: 0 }]) {
-    const app = new cordis.Context()
-    app.provide('webServer', fakeWebServer())
-    app.provide('connection', { requestRejection: () => undefined })
-    app.provide('tools', {})
-    // A plugin fiber rejects asynchronously; the Loader surfaces it as a
-    // failed activation, so the test must await it too.
-    const mounting = async () => {
-      await app.plugin({ name: plugin.name, inject: plugin.inject, apply: plugin.apply }, config)
-    }
-    await assert.rejects(mounting, /always-allow:/)
-  }
+test('the pre-execute tracker preserves an earlier ask or deny',async t=>{
+  const f=await setup(t)
+  await writeFile(f.file,'rules:\n - match: {tools: [bash]}\n   action: ask\n   reason: confirmation\n')
+  assert.equal((await f.flow('tools/pre-execute',f.exec,async()=>({kind:'allow'}))).kind,'ask')
+  const p=await pendingApproval(f)
+  assert.equal((await f.http('propose',identity)).body.ok,true)
+  p.answer('rejected');await p.response
 })
 
-test('inject declares only services the route can actually reach', async (t) => {
-  // A declared Service that no earlier row provides leaves the fiber PENDING
-  // forever: no error, no log, and — because the row never activates — no
-  // browser half either. That is silent, so pin the contract here.
-  assert.deepEqual(plugin.inject, ['webServer'])
-
-  const cordis = await loadCordis()
-  if (cordis === undefined) {
-    t.skip('harness checkout not available for the Cordis import')
-    return
-  }
-  const app = new cordis.Context()
-  const webServer = fakeWebServer()
-  app.provide('webServer', webServer)
-  // `connection` is provided AFTER the mount, exactly as at runtime.
-  const fiber = app.plugin({ name: plugin.name, inject: plugin.inject, apply: plugin.apply })
-  await fiber
-  assert.equal(fiber.state, 2, 'the fiber activates without connection')
-
-  app.provide('connection', { requestRejection: () => 403 })
-  const route = webServer.routes.find((entry) => entry.path === plugin.CHANNEL)
-  const rejected = await callRoute(route, { url: `${plugin.CHANNEL}/propose`, body: { callId: 'x' } })
-  assert.equal(rejected.status, 403, 'a newly provided connection is honoured at request time')
+test('missing authentication service fails closed and an untrusted request never writes',async t=>{
+  const f=await setup(t)
+  assert.equal((await f.http('save',identity,{})).status,401)
+  const app=new Context();let route
+  app.provide('webServer',{register(value){route=value;return()=>{}}})
+  await app.plugin({name:plugin.name,inject:plugin.inject,apply:plugin.apply})
+  let status
+  await route.handler({method:'POST',headers:{}},{writeHead(value){status=value},end(){}})
+  assert.equal(status,503)
 })
 
-test('the escalation listener mounts only when the rule engine is present', async (t) => {
-  const cordis = await loadCordis()
-  if (cordis === undefined) {
-    t.skip('harness checkout not available for the Cordis import')
-    return
-  }
-  const workspace = await mkdtemp(join(tmpdir(), 'always-allow-'))
-  t.after(() => rm(workspace, { recursive: true, force: true }))
-
-  const { Context } = cordis
-  const app = new Context()
-  const webServer = fakeWebServer()
-  app.provide('webServer', webServer)
-  app.provide('connection', { requestRejection: () => undefined })
-  app.provide('tools', {})
-
-  // No runtime yet: the listener must not exist, and the plugin must still
-  // mount. A declared `inject` entry would have left the whole fiber pending.
-  const fiber = app.plugin({ name: plugin.name, inject: plugin.inject, apply: plugin.apply, Config: undefined }, { autoApproveEscalation: true })
-  await fiber
-  assert.ok(webServer.routes.find((entry) => entry.path === plugin.CHANNEL), 'the route mounted without the engine')
-
-  // Provide the engine the way `dsh-permission-rules` does, then drive one
-  // escalation through the real `approval/request` waterfall.
-  const compiled = {
-    rules: [{
-      index: 0, sourceIndex: 0, action: 'allow', reason: 'saved', enabled: true, tags: [],
-      tools: [], agents: [], params: new Map(), paths: [], absent: [], source: {},
-      argv: {
-        command: [/^git$/],
-        args: { positive: [], negative: [] },
-        anyArg: { positive: [], negative: [] },
-        pipeline: [],
-      },
-    }],
-  }
-  app.provide('permissionRulesRuntime', { rulesFor: () => ({ compiled, sources: [], cwd: workspace }) })
-
-  // Track a call the way a real pre-execute pass does.
-  await app.waterfall('tools/pre-execute', shellExec('call-esc', 'git status', workspace), () => Promise.resolve({ kind: 'allow' }))
-
-  const approved = await app.waterfall(
-    'approval/request',
-    { callId: 'call-esc', toolName: 'bash', reason: 'escalate sandbox to danger-full-access: needs real /tmp' },
-    () => Promise.resolve('unavailable'),
-  )
-  assert.equal(approved, 'allowed-once', 'a saved rule answers its own escalation')
-
-  const other = await app.waterfall(
-    'approval/request',
-    { callId: 'call-esc', toolName: 'bash', reason: 'mkfs formats a device' },
-    () => Promise.resolve('unavailable'),
-  )
-  assert.equal(other, 'unavailable', 'an ordinary ask is still delegated')
+test('same call id in another session cannot read or spend an approval',async t=>{
+  const f=await setup(t)
+  await f.flow('tools/pre-execute',f.exec,async()=>({kind:'allow'}))
+  const p=await pendingApproval(f)
+  assert.equal((await f.http('propose',{sessionId:'s2',callId:'c1'})).body.ok,false)
+  p.answer('rejected');await p.response
 })
 
-test('a command is tracked even when an EARLIER listener answers ask', async (t) => {
-  const cordis = await loadCordis()
-  if (cordis === undefined) {
-    t.skip('harness checkout not available for the Cordis import')
-    return
-  }
-  const workspace = await mkdtemp(join(tmpdir(), 'always-allow-'))
-  t.after(() => rm(workspace, { recursive: true, force: true }))
-
-  const { Context } = cordis
-  const app = new Context()
-  const webServer = fakeWebServer()
-  app.provide('webServer', webServer)
-  app.provide('connection', { requestRejection: () => undefined })
-  app.provide('tools', {})
-
-  // An upstream listener that ANSWERS ask without calling next(), exactly like
-  // permission-rules on a rule hit. This is the ordering that used to hide the
-  // forever button: the tracker never ran, so /propose answered unknown-call.
-  app.on('tools/pre-execute', (exec) => Promise.resolve({ kind: 'ask', reason: 'needs confirmation' }))
-
-  const fiber = app.plugin({ name: plugin.name, inject: plugin.inject, apply: plugin.apply })
-  await fiber
-
-  const route = webServer.routes.find((entry) => entry.path === plugin.CHANNEL)
-  const decision = await app.waterfall('tools/pre-execute', shellExec('call-ask', 'touch /tmp/x', workspace), () => Promise.resolve({ kind: 'allow' }))
-  assert.deepEqual(decision, { kind: 'ask', reason: 'needs confirmation' }, 'the upstream ask still wins')
-
-  const proposal = await callRoute(route, { url: `${plugin.CHANNEL}/propose`, body: { callId: 'call-ask' } })
-  assert.equal(proposal.status, 200)
-  assert.equal(proposal.body.ok, true, 'the command was tracked despite the upstream short-circuit')
-  assert.equal(proposal.body.command, 'touch')
+test('overlapping identical call ids are quarantined until all executions finish',async t=>{
+  const f=await setup(t)
+  const first=f.exec
+  await f.flow('tools/pre-execute',first,async()=>({kind:'allow'}))
+  const second={...first,arguments:{...first.arguments,command:'printf DIFFERENT'}}
+  await f.flow('tools/pre-execute',second,async()=>({kind:'allow'}))
+  let answered=false
+  await f.flow('tools/execute',second,async()=>{
+    const p=await pendingApproval(f)
+    assert.equal((await f.http('propose',identity)).body.ok,false)
+    p.answer('human');assert.equal(await p.response,'human');answered=true
+    return {}
+  })
+  assert.equal(answered,true)
+  await f.app.waterfall(scopeTarget(f.agent,f.agent),'tools/post-execute',first,{},async()=>({kind:'accept'}))
 })

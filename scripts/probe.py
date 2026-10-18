@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -38,7 +39,7 @@ from live import (  # noqa: E402
 )
 
 PACKAGE = "dsh-always-allow"
-PROFILE_DIR = Path.home() / ".dsh/profiles" / PROFILE
+PROFILE_DIR = Path(os.environ.get("DSH_HOME", str(Path.home() / ".dsh"))) / "profiles" / PROFILE
 
 
 def check_enablement() -> bool:

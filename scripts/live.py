@@ -21,7 +21,7 @@ from pathlib import Path
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 HARNESS = Path(os.environ.get("DSH_HARNESS", "/home/c163q/Program/fetch/deepseek-harness"))
-DSH_BIN = HARNESS / "apps/desktop-host/node_modules/.bin/dsh"
+DSH_BIN = "pnpm"
 PROFILE = os.environ.get("DSH_PROFILE", "web")
 STATE = PLUGIN_ROOT / ".tmp/instance.json"
 
@@ -82,7 +82,7 @@ def opener() -> urllib.request.OpenerDirector:
     request gets `401`, so every authenticated read needs this opener.
     """
     jar = http.cookiejar.CookieJar()
-    return urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(jar))
 
 
 def wait_for_http(port: int, token: str, timeout: float = 120.0) -> None:
@@ -97,7 +97,7 @@ def wait_for_http(port: int, token: str, timeout: float = 120.0) -> None:
         except (urllib.error.URLError, TimeoutError, OSError):
             pass
         time.sleep(1.0)
-    fail(f"instance on port {port} never answered: {url}")
+    fail(f"instance on port {port} never answered its authenticated loopback URL")
 
 
 def fetch_index(port: int, token: str) -> str:
@@ -147,7 +147,7 @@ def probe_route(port: int, path: str = "/always-allow/propose") -> int:
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        with opener().open(request, timeout=10) as response:
             return response.status
     except urllib.error.HTTPError as error:
         return error.code
@@ -160,11 +160,10 @@ def start_instance(port: int, extra_args: list[str] | None = None) -> dict:
     log = PLUGIN_ROOT / f".tmp/instance-{port}.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     command = [
-        str(DSH_BIN),
-        "--profile", PROFILE,
+        str(DSH_BIN), "--dir", str(HARNESS), "dsh", PROFILE,
+        *(extra_args or []),
         "--port", str(port),
         "--no-open",
-        *(extra_args or []),
     ]
     handle = log.open("w")
     process = subprocess.Popen(
@@ -173,6 +172,7 @@ def start_instance(port: int, extra_args: list[str] | None = None) -> dict:
         stderr=subprocess.STDOUT,
         start_new_session=True,
     )
+    handle.close()
     deadline = time.time() + 120
     token = None
     while time.time() < deadline:
@@ -183,24 +183,33 @@ def start_instance(port: int, extra_args: list[str] | None = None) -> dict:
             fail(f"`dsh web` exited during startup; see {log}")
         time.sleep(0.5)
     if token is None:
-        process.kill()
+        stop_instance({"pid": process.pid})
         fail(f"no launch token appeared in {log}")
-    wait_for_http(port, token)
     state = {"port": port, "token": token, "pid": process.pid,
              "url": f"http://127.0.0.1:{port}/?token={token}", "log": str(log)}
+    try:
+        wait_for_http(port, token)
+    except BaseException:
+        stop_instance(state)
+        raise
     STATE.write_text(json.dumps(state, indent=2))
     return state
 
 
 def chromium_path() -> str:
     """Locate the system Chromium Playwright should drive."""
+    override = os.environ.get("PLAYWRIGHT_CHROMIUM")
+    if override:
+        if not Path(override).is_file():
+            fail("PLAYWRIGHT_CHROMIUM does not point to a file")
+        return override
     for candidate in ("/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome"):
         if Path(candidate).exists():
             return candidate
     fail("no system Chromium found; install chromium or set PLAYWRIGHT_CHROMIUM")
 
 
-def launch_page(viewport: tuple[int, int] = (1400, 900)):
+def launch_page(viewport: tuple[int, int] = (1400, 900), ignored_console_paths=()):
     """Open a fresh browser page with console and page errors collected."""
     from playwright.sync_api import sync_playwright
 
@@ -209,8 +218,15 @@ def launch_page(viewport: tuple[int, int] = (1400, 900)):
     page = browser.new_page(viewport={"width": viewport[0], "height": viewport[1]})
     errors: list[str] = []
     page.on("pageerror", lambda error: errors.append(f"pageerror: {str(error)[:500]}"))
-    page.on("console", lambda message: errors.append(f"{message.type}: {message.text[:300]}")
-            if message.type == "error" else None)
+    def console_error(message):
+        if message.type != "error":
+            return
+        from urllib.parse import urlsplit
+        source = message.location.get("url", "")
+        if "404" in message.text and urlsplit(source).path in ignored_console_paths:
+            return
+        errors.append(f"error: {message.text[:300]} [{source.split('?')[0]}]")
+    page.on("console", console_error)
     return playwright, browser, page, errors
 
 
@@ -241,7 +257,7 @@ if __name__ == "__main__":
     print(json.dumps({
         "plugin_root": str(PLUGIN_ROOT),
         "dsh_bin": str(DSH_BIN),
-        "dsh_bin_exists": DSH_BIN.exists(),
+        "dsh_bin_exists": __import__("shutil").which(DSH_BIN) is not None,
         "profile": PROFILE,
         "state": str(STATE),
         "chromium": chromium_path() if Path("/usr/bin/chromium").exists() else None,

@@ -1,95 +1,82 @@
-/**
- * The two operations the browser half performs, kept transport-neutral so they
- * can be exercised without an HTTP server or a live Cordis context.
- *
- * `propose` answers "is there a prefix worth offering for this pending
- * approval?" and `save` writes it. Both take a `store` — the pending-approval
- * map plus the filesystem writes — as a parameter rather than importing a
- * singleton, so tests can supply their own.
- */
-
-import { insertRule, renderRule } from './rules-file.js'
+/** Browser proposals and saves are tied to a live approval and its opaque token. */
+import { randomUUID } from 'node:crypto'
+import { resolve } from 'node:path'
+import { callKey } from './escalation.js'
 import { proposeRule } from './prefix.js'
+import { renderRule } from './rules-file.js'
 
-/** A pending approval cannot be answered any more (answered, denied, or replaced). */
 export const UNKNOWN_CALL = 'unknown-call'
+const refused = message => ({ ok: false, code: UNKNOWN_CALL, message })
 
-/**
- * Resolve the tracked call a request refers to.
- * @param {Map<string, {command: string, cwd: string}>} calls - pending approvals.
- * @param {unknown} callId - caller-supplied identity.
- * @returns {{ok: true, tracked: {command: string, cwd: string}, callId: string}
- *   | {ok: false, code: string, message: string}}
- */
-export function lookup(calls, callId) {
-  const id = typeof callId === 'string' ? callId : undefined
-  const tracked = id === undefined ? undefined : calls.get(id)
-  if (tracked === undefined) {
-    return { ok: false, code: UNKNOWN_CALL, message: 'that approval is no longer pending' }
-  }
-  return { ok: true, tracked, callId: id }
+/** Resolve only a currently pending, unspent approval in the exact session. */
+export function lookup(pending, body) {
+  if (typeof body?.sessionId !== 'string' || typeof body?.callId !== 'string') return refused('approval identity is required')
+  const entry = pending.get(callKey(body.sessionId, body.callId))
+  if (entry === undefined || !entry.active || entry.saving || entry.saved || entry.signal?.aborted) return refused('that approval is no longer pending')
+  return {ok:true, entry}
 }
 
-/**
- * Offer the prefix for one pending approval, if it has one worth saving.
- * @param {Map<string, {command: string, cwd: string}>} calls - pending approvals.
- * @param {unknown} callId - caller-supplied identity.
- * @returns the proposal, or a typed refusal the UI explains.
- */
-export function proposeFor(calls, callId) {
-  const found = lookup(calls, callId)
-  if (found.ok !== true) return found
-  return proposeRule(found.tracked.command)
+/** Propose a literal prefix; the host-access scope is visible before a user clicks. */
+export function proposeFor(deps, body) {
+  const found = lookup(deps.pending, body)
+  if (!found.ok) return found
+  const entry = found.entry
+  const proposal = proposeRule(entry.command)
+  if (!proposal.ok) return proposal
+  return {...proposal, approvalToken:entry.token, hostAccess:entry.hostAccess, tool:entry.tool, commandLine:entry.command}
 }
 
-/**
- * Save the prefix for one pending approval and forget the approval.
- * @param {object} deps
- * @param {Map<string, {command: string, cwd: string}>} deps.calls - pending approvals.
- * @param {string} deps.rulesFile - configured rule-file path.
- * @param {string[]} deps.toolNames - shell Tool names the rule applies to.
- * @param {(file: string, ruleText: string) => Promise<string>} deps.appendRule
- *   - performs the atomic append and resolves the absolute path written.
- * @param {unknown} callId - caller-supplied identity.
- * @param {unknown} [reason] - optional caller-supplied reason text.
- * @returns `{ok: true, value: {file, label}}` or a typed refusal.
- */
-export async function saveFor(deps, callId, reason) {
-  const found = lookup(deps.calls, callId)
-  if (found.ok !== true) return found
-  const proposal = proposeRule(found.tracked.command)
-  if (proposal.ok !== true) return proposal
-  const text = typeof reason === 'string' && reason.trim() !== ''
-    ? reason.trim()
-    : `Always allow "${proposal.label}" in this workspace (saved from the approval prompt)`
-  const file = await deps.appendRule(
-    rulesFileFor(deps, found.tracked.cwd),
-    renderRule(proposal, text, deps.toolNames),
-  )
-  deps.calls.delete(found.callId)
-  return { ok: true, value: { ok: true, file, label: proposal.label } }
-}
-
-/**
- * Absolute rule-file path for one session cwd.
- * @param {object} deps
- * @param {string} deps.cwd - Session workspace directory (or the tracked call's).
- * @param {string} deps.rulesFile - configured path.
- */
+/** Resolve the rule file relative to the requesting session. */
 export function rulesFileFor(deps, cwd) {
-  const file = deps.rulesFile
-  return file.startsWith('/') ? file : `${cwd.replace(/\/+$/, '')}/${file}`
+  return resolve(cwd, deps.rulesFile)
 }
 
-/**
- * Dispatch one endpoint by name — the single place both transports agree on.
- * @param {object} deps - see {@link saveFor}.
- * @param {string} endpoint - `propose` or `save`.
- * @param {Record<string, unknown>} [body] - decoded request body.
- */
+/** Commit only if this exact pending question still owns the unchanged command. */
+export async function saveFor(deps, body) {
+  const found = lookup(deps.pending, body)
+  if (!found.ok) return found
+  const entry = found.entry
+  if (body.approvalToken !== entry.token) return refused('approval token does not match')
+  if (entry.hostAccess && body.allowHost !== true) return refused('explicit host-access consent is required')
+  const proposal = proposeRule(entry.command)
+  if (!proposal.ok) return proposal
+  const file = rulesFileFor(deps, entry.cwd)
+  const grant = {cwd:entry.cwd, file, tool:entry.tool, prefix:proposal.label}
+  const id = entry.hostAccess ? (deps.grantId?.(grant) ?? randomUUID()) : undefined
+  const reason = entry.hostAccess
+    ? `Always allow "${proposal.label}" with danger-full-access in this workspace (saved from the approval prompt)`
+    : `Always allow "${proposal.label}" in this workspace (saved from the approval prompt)`
+  const rule = renderRule(proposal, reason, [entry.tool], {
+    patternMode:deps.patternMode, autoApproveEscalation:entry.hostAccess, grantId:id,
+  })
+  const current = () => {
+    if (!entry.active || entry.saved || entry.signal?.aborted
+      || deps.pending.get(callKey(body.sessionId, body.callId)) !== entry
+      || (entry.isCurrent !== undefined && !entry.isCurrent())) {
+      throw new Error('that approval is no longer pending or its command changed')
+    }
+  }
+  entry.saving = true
+  try {
+    const written = await deps.appendRule(file, rule, {
+      beforeCommit: () => {
+        current()
+        // This is synchronous: cancellation cannot interleave between authorization and rename.
+        if (entry.hostAccess) deps.authorizeGrant(grant, id)
+      },
+      validate:deps.validate,
+    })
+    entry.saved = true
+    deps.reload?.(entry.cwd)
+    return {ok:true, value:{file:written,label:proposal.label}}
+  } finally {
+    entry.saving = false
+  }
+}
+
+/** Dispatch the authenticated browser API. Caller-controlled reasons are never persisted. */
 export async function dispatch(deps, endpoint, body) {
-  const callId = body?.callId
-  if (endpoint === 'propose') return proposeFor(deps.calls, callId)
-  if (endpoint === 'save') return saveFor(deps, callId, body?.reason)
-  return { ok: false, code: 'bad-endpoint', message: `unknown endpoint ${String(endpoint)}` }
+  if (endpoint === 'propose') return proposeFor(deps, body)
+  if (endpoint === 'save') return saveFor(deps, body)
+  return {ok:false,code:'bad-endpoint',message:'unknown endpoint'}
 }

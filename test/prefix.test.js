@@ -95,3 +95,16 @@ test('commandOf reads only configured shell tools', () => {
   assert.equal(commandOf('read', { path: 'x' }, ['bash']), undefined)
   assert.equal(commandOf('bash', { path: 'x' }, ['bash']), undefined)
 })
+
+test('newlines, escapes, expansions, and path-disguised interpreters never get a grant', () => {
+  for (const command of ['git status\nid', 'ls\r\nid', 'ls \\x', 'ls *', 'ls ~', 'ls # hi', 'ls "x"', 'ls %PATH%', '/bin/bash script.sh', './rm x', '/usr/bin/git', 'pwsh -c id']) {
+    assert.equal(proposeRule(command).ok, false, JSON.stringify(command))
+  }
+})
+
+test('case variants and shell dispatch builtins cannot disguise broad command grants', () => {
+  assert.deepEqual(proposeRule('GIT status -s'), {ok:true,command:'GIT',args:['status'],label:'GIT status'})
+  for (const command of ['BASH script.sh','SUDO ls','PwSh -c id','command git status','builtin eval x','time git status','exec git status']) {
+    assert.equal(proposeRule(command).ok,false,command)
+  }
+})

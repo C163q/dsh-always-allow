@@ -1,5 +1,7 @@
 # Pitfalls
 
+These are historical framework integration notes. Current permission behavior and authorization boundaries are defined in README and rules-format.md; v0.3 no longer uses audit records or a custom compiled-rule matcher.
+
 Hard-won findings from building this plugin against the real Harness profile.
 Every item below cost at least one debugging round; each one failed **silently**,
 which is what made it expensive. Read this before changing the host half, the

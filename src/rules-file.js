@@ -1,94 +1,75 @@
-/**
- * The rule document this plugin appends to.
- *
- * The format is `dsh-permission-rules`' own documented YAML
- * (`docs/rules-format.md` in that package): a top-level `rules:` list whose
- * entries match on `tools` and `argv` and carry an `action` plus a `reason`.
- * This module only SERIALIZES that document; it never parses or evaluates a
- * rule, so there is no second engine to keep in sync.
- */
+/** Serialize narrowly scoped prefix rules and append them through the YAML AST. */
+import { isMap, isSeq, parseDocument, visit } from 'yaml'
+import { COMMAND_CHARS } from './prefix.js'
 
-/**
- * One YAML scalar: double-quoted, so every accepted word round-trips exactly.
- * @param {string} value
- */
-/**
- * Whether a document already carries this exact rule block.
- *
- * The comparison is textual on the normalized block: this module never parses
- * YAML, and a rule it rendered itself is byte-identical when present.
- * @param {string} body - current document.
- * @param {string} ruleText - rule block from {@link renderRule}.
- */
-export function hasRule(body, ruleText) {
-  const needle = String(ruleText ?? '').trim()
-  if (needle === '') return false
-  return String(body ?? '').includes(needle)
-}
+/** A saved rule may grant host access only with this versioned marker. */
+export const GRANT_TAG = 'dsh-always-allow/v1/danger-full-access'
+export const GRANT_ID_TAG = 'dsh-always-allow/grant/'
+export const PREFIX_TAG = 'dsh-always-allow/prefix/'
 
+/** JSON double-quoted scalars are valid YAML and escape control characters. */
 export function scalar(value) {
-  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+  return JSON.stringify(value)
 }
 
-/**
- * Render the `allow` entry for one proposal.
- *
- * The shape mirrors what a human would write by hand, in the documented key
- * order, because this file is meant to be read and edited afterwards.
- * @param {{command: string, args: string[]}} proposal - prefix from `proposeRule`.
- * @param {string} reason - shown in the file and, for question-style rules, in the UI.
- * @param {string[]} toolNames - shell Tool names the rule applies to.
- * @returns {string} the rule block, indented for a `rules:` list.
- */
-export function renderRule(proposal, reason, toolNames) {
-  const argv = [`        command: ${scalar(proposal.command)}`]
-  if (proposal.args.length > 0) {
-    argv.push(`        args: [${proposal.args.map(scalar).join(', ')}]`)
-  }
+/** Render a rule in the engine's configured glob or regex syntax. */
+export function renderRule(proposal, reason, toolNames, options = {}) {
+  const label = [proposal.command, ...proposal.args].join(' ')
+  const regexEscape = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const patterns = options.patternMode === 'regex'
+    ? [`^${regexEscape(label)}(?: [${COMMAND_CHARS}]*)?$`]
+    : [label, `${label} *`, `!*[!${COMMAND_CHARS}]*`]
+  const tags = options.autoApproveEscalation === true
+    ? [GRANT_TAG, `${PREFIX_TAG}${label}`, `${GRANT_ID_TAG}${options.grantId}`]
+    : []
   return [
     '  - match:',
-    `      tools: [${toolNames.join(', ')}]`,
-    '      argv:',
-    ...argv,
+    `      tools: [${toolNames.map(scalar).join(', ')}]`,
+    '      params:',
+    `        command: [${patterns.map(scalar).join(', ')}]`,
     '    action: allow',
     `    reason: ${scalar(reason)}`,
+    `    tags: [${tags.map(scalar).join(', ')}]`,
   ].join('\n')
 }
 
-/**
- * Insert one rule into a rules document, creating the `rules:` list when the
- * file is empty or absent.
- *
- * An existing body keeps its comments and order, and the new entry is
- * APPENDED so any earlier, narrower `deny` or `ask` rule still wins on the
- * engine's first-match basis.
- *
- * An EMPTY flow list (`rules: []`) is treated as an empty document and filled
- * in place: it carries no entries, so there is nothing to corrupt, and
- * refusing it would leave a pruned file permanently unwritable — the file
- * would parse fine, the plugin would simply never save again.
- *
- * An identical rule already present is NOT appended twice. Clicking the button
- * twice, or approving the same command in two tabs, would otherwise grow the
- * document on every click, and a duplicate is invisible in the UI: the engine
- * stops at the first match, so the copy below it never does anything.
- * @param {string} text - current file contents (may be empty).
- * @param {string} ruleText - rule block from {@link renderRule}.
- * @returns {string} the new document.
- * @throws when the file uses a non-empty flow-style `rules: [...]`, which is
- * not rewritten.
- */
+/** Reject unsupported YAML before it can be changed. Aliases obscure write ownership. */
+function documentOf(text) {
+  const doc = parseDocument(text, { uniqueKeys: true })
+  if (doc.errors.length > 0) throw new Error(`invalid rules YAML: ${doc.errors[0].message}`)
+  visit(doc, {
+    Alias() { throw new Error('rules YAML aliases are not supported for automatic edits') },
+    Node(_key, node) {
+      if (node.tag !== undefined) throw new Error('rules YAML custom tags are not supported')
+    },
+  })
+  if (doc.contents !== null && !isMap(doc.contents)) throw new Error('rules YAML must be a mapping')
+  return doc
+}
+
+/** Append below existing policy, retaining comments and all unrelated top-level keys. */
 export function insertRule(text, ruleText) {
-  const body = String(text ?? '').trimEnd()
-  if (hasRule(body, ruleText)) return body === '' ? `rules:\n` : `${body}\n`
-  if (body.trim() === '') return `rules:\n${ruleText}\n`
-  if (/^rules:\s*$/m.test(body)) return `${body}\n${ruleText}\n`
-  // `rules: []` / `rules: [ ]` — an empty flow sequence, same as no rules.
-  if (/^rules:\s*\[\s*\]\s*$/m.test(body)) {
-    return `${body.replace(/^rules:\s*\[\s*\]\s*$/m, 'rules:')}\n${ruleText}\n`
+  const doc = documentOf(String(text ?? ''))
+  const incoming = documentOf(`rules:\n${ruleText}\n`).get('rules')
+  if (!isSeq(incoming) || incoming.items.length !== 1 || !isMap(incoming.items[0])) {
+    throw new Error('expected one rule mapping')
   }
-  if (/^rules:\s*[^\s#]/m.test(body)) {
-    throw new Error('the rule file uses flow-style "rules: [...]", which this plugin will not rewrite')
+  let rules = doc.get('rules', true)
+  if (rules === undefined || rules?.value === null) {
+    doc.set('rules', doc.createNode([]))
+    rules = doc.get('rules', true)
   }
-  return `rules:\n${ruleText}\n\n${body}\n`
+  if (!isSeq(rules)) throw new Error('rules must be a YAML sequence')
+  const entry = incoming.items[0].toJSON()
+  if (rules.items.some(item => isMap(item) && JSON.stringify(item.toJSON()) === JSON.stringify(entry))) {
+    return text
+  }
+  rules.flow = false
+  rules.add(doc.createNode(entry))
+  return doc.toString({ lineWidth: 0 })
+}
+
+/** Whether inserting an identical rule would leave the document unchanged. */
+export function hasRule(body, ruleText) {
+  return insertRule(body, ruleText) === body
 }

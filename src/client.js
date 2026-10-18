@@ -131,6 +131,9 @@ window.__ModuleLoader__.load({
       'reject': '拒绝',
       'allowOnce': '允许一次',
       'allowForever': '永久放行',
+      'hostGrant': '在此工作区永久允许该前缀使用 danger-full-access（含后续参数）；复合命令仍需审批。',
+      'blocked.unknown-call': '这条审批已结束或无法安全关联到命令',
+      'blocked.unavailable': '无法提供永久授权：请检查规则插件是否启用，以及两个插件是否使用同一规则文件',
       'saving': '正在保存…',
       'saved': '已永久放行',
       'failed': '保存失败',
@@ -147,6 +150,9 @@ window.__ModuleLoader__.load({
       'reject': 'Reject',
       'allowOnce': 'Allow once',
       'allowForever': 'Always allow',
+      'hostGrant': 'Allow this prefix and later arguments with danger-full-access in this workspace; compound commands still require approval.',
+      'blocked.unknown-call': 'This approval ended or could not be safely linked to a command',
+      'blocked.unavailable': 'Persistent approval is unavailable; check that permission-rules is enabled and both plugins use the same rules file',
       'saving': 'Saving…',
       'saved': 'Always allowed',
       'failed': 'Could not save',
@@ -170,8 +176,9 @@ window.__ModuleLoader__.load({
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload ?? {}),
       })
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      return await response.json()
+      const value = await response.json()
+      if (!response.ok) throw new Error(value?.message ?? `HTTP ${response.status}`)
+      return value
     }
 
     /**
@@ -228,8 +235,11 @@ window.__ModuleLoader__.load({
       const [note, setNote] = React.useState(undefined)
       const [busy, setBusy] = React.useState(false)
       const waiting = React.useRef(false)
+      const activeKey = React.useRef(approval?.key)
+      activeKey.current = approval?.key
 
       const callId = approval?.callId
+      const sessionId = approval?.sessionId
       const [proposal, setProposal] = React.useState({ status: 'idle' })
 
       React.useEffect(() => {
@@ -239,13 +249,13 @@ window.__ModuleLoader__.load({
         }
         let live = true
         setProposal({ status: 'loading' })
-        void call('propose', { callId }).then((value) => {
+        void call('propose', { callId, sessionId }).then((value) => {
           if (live) setProposal(value?.ok === true ? { status: 'ready', proposal: value } : { status: 'blocked', result: value })
         }, () => {
-          if (live) setProposal({ status: 'unavailable' })
+          if (live) setProposal({ status: 'blocked', result: { code: 'unavailable' } })
         })
         return () => { live = false }
-      }, [callId])
+      }, [callId, sessionId, approval?.key])
 
       React.useEffect(() => {
         setAnswered(false)
@@ -269,11 +279,15 @@ window.__ModuleLoader__.load({
       }
 
       const allowForever = () => {
-        if (busy || !approval.answerable) return
+        if (waiting.current || busy || !approval.answerable || proposal.status !== 'ready') return
+        waiting.current = true
         setBusy(true)
         setNote(undefined)
-        void call('save', { callId }).then((value) => {
+        const savingKey = approval.key
+        void call('save', { callId, sessionId, approvalToken: proposal.proposal.approvalToken, allowHost: proposal.proposal.hostAccess === true }).then((value) => {
+          if (activeKey.current !== savingKey) return
           if (value?.ok === true) {
+            waiting.current = false
             answer('allowed-once')
             return
           }
@@ -285,9 +299,12 @@ window.__ModuleLoader__.load({
             text: localized === key ? String(value?.message ?? t('failed')) : `${t('failed')}: ${localized}`,
           })
           setBusy(false)
+          waiting.current = false
         }, (error) => {
+          if (activeKey.current !== savingKey) return
           setNote({ error: true, text: `${t('failed')}: ${String(error?.message ?? error)}` })
           setBusy(false)
+          waiting.current = false
         })
       }
 
@@ -299,7 +316,8 @@ window.__ModuleLoader__.load({
       // `ApprovalCommand` detail renderer does. `renderSlot` is NOT used here:
       // the children-declaration that provides it belongs to the stock entry,
       // and a second declaration of that child slot throws.
-      const command = useApprovalCommand(props, callId)
+      const snapshotCommand = useApprovalCommand(props, callId)
+      const command = proposal.status === 'ready' ? proposal.proposal.commandLine : snapshotCommand
       const detail = typeof command === 'string' && command.length > 0
         ? h('div', { className: 'always-allow__command' }, command)
         : null
@@ -322,6 +340,9 @@ window.__ModuleLoader__.load({
           h('div', { className: 'always-allow__body', role: 'group', 'aria-label': t('detail.aria') },
             h('div', { className: 'always-allow__headline' }, headline),
             detail,
+            proposal.status === 'ready' && proposal.proposal.hostAccess
+              ? h('div', { className: 'always-allow__note' }, t('hostGrant'))
+              : null,
             blockedHint === null
               ? null
               : h('div', { className: 'always-allow__note' }, blockedHint)),
@@ -334,7 +355,7 @@ window.__ModuleLoader__.load({
             h('button', {
               type: 'button',
               className: 'always-allow__btn always-allow__btn--reject',
-              disabled: answered,
+              disabled: answered || busy,
               onClick: () => { answer('rejected') },
             }, t('reject')),
             proposal.status === 'ready' || proposal.status === 'loading'
@@ -348,7 +369,7 @@ window.__ModuleLoader__.load({
             h('button', {
               type: 'button',
               className: 'always-allow__btn always-allow__btn--primary',
-              disabled: answered,
+              disabled: answered || busy,
               onClick: () => { answer('allowed-once') },
             }, t('allowOnce')))))
     }

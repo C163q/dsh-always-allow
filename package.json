@@ -1,7 +1,7 @@
 {
   "name": "dsh-always-allow",
-  "version": "0.2.2",
-  "description": "Codex-style \"always allow commands that start with …\" for DeepSeek Harness approvals: a one-click prefix rule written into the workspace rules file that dsh-permission-rules already reads.",
+  "version": "0.3.0",
+  "description": "Persistent Web command-prefix approvals with explicit, scoped danger-full-access grants for DeepSeek Harness.",
   "type": "module",
   "license": "Apache-2.0",
   "main": "./src/index.js",
@@ -38,7 +38,7 @@
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.js\"",
-    "check": "node --check src/index.js && node --check src/client.js && node --check src/config.js && node --check src/prefix.js && node --check src/rules-file.js && node --check src/endpoints.js"
+    "check": "node --check src/index.js && node --check src/client.js && node --check src/config.js && node --check src/prefix.js && node --check src/rules-file.js && node --check src/endpoints.js && node --check src/escalation.js && node --check src/grants.js"
   },
   "keywords": [
     "dsh",
@@ -55,14 +55,19 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.5-alpha.1",
-    "dsh-permission-rules": ">=0.7.0"
+    "dsh-permission-rules": "^0.7.15"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/cordis": {
       "optional": true
-    },
-    "dsh-permission-rules": {
-      "optional": true
     }
+  },
+  "dependencies": {
+    "yaml": "^2.8.1"
+  },
+  "devDependencies": {
+    "dsh-permission-rules": "0.7.15",
+    "@deepseek-ai/cordis": "^4.0.5-alpha.1",
+    "@deepseek-ai/dsh-scope": "0.2.1-alpha.1"
   }
 }
