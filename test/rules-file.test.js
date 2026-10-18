@@ -53,3 +53,11 @@ test('scalars and tool names cannot inject YAML keys or new rules', () => {
   assert.deepEqual(parse(text).rules[0].match.tools, ['bash]\n  action: deny'])
   assert.equal(parse(text).rules[0].reason, reason)
 })
+
+
+test('path rules match complete literal executable tokens without basename or path expansion', () => {
+  const rules = compile(insertRule('', renderRule({command:'bin/fff-timer-query',args:[]},'path grant',['bash'])))
+  for (const [command,allowed] of [['bin/fff-timer-query',true],['bin/fff-timer-query --status',true],['bin/fff-timer-query-other',false],['other/fff-timer-query',false],['./bin/fff-timer-query',false],['bin/fff-timer-query; id',false]]) {
+    assert.equal(matchRules(rules,'bash',{command},'/w')?.rule.action === 'allow',allowed,command)
+  }
+})

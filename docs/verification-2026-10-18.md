@@ -34,3 +34,11 @@ The archived test DSH_HOME had permission-rules disabled in dshmarket despite it
 Existing rules remain ordinary policy until explicitly reauthorized. A new grant can follow a legacy ordinary allow, but an overall first-match deny/ask still prevents automatic escalation. Removing the explicit grant rule stops the automatic match; removing the corresponding host-ledger id additionally prevents restoration of an old grant rule.
 
 DSH_HOME must remain outside every model-writable root, including independently configured workspaces and custom executor mounts. A prefix can invoke arbitrary behavior permitted by its program and later arguments; it is a durable user authorization, not a proof that its program is harmless. Already-unrestricted host code is outside the protection this plugin can provide.
+
+## Executable-path follow-up (v0.3.1)
+
+The user approved literal executable paths with a yellow permanent-approval warning. The complete path remains the prefix; basename checks preserve excluded commands and mandatory subcommands. A path save requires a server-checked `allowExecutablePath` acknowledgement, preventing older clients from silently saving a path grant without the new warning.
+
+The suite now has 53 passing individual tests. Chromium's `verify_flow.py --executable-path` directly executed a harmless executable probe, verified that the permanent button was inside the risk group, and checked replacement, symlink, directory, and argument warning copy. The visible border was solid, 2 px, `rgb(247, 173, 49)`. A 620 px viewport check confirmed the long-path button remained within the frame. Durable results again verified manual save, an automatic repeat with zero approval panels, and rejection of a different executable path.
+
+Screenshots and report: `.tmp/path-browser/path-risk-panel.png`, `01-manual-approval.png`, `02-automatic-completion.png`, `04-mobile-path-warning.png`, and `report.json`. Independent read-only review found no material permission regressions in these changes. Relative prefix spellings are covered by unit/real-engine tests; browser execution used an absolute executable path on Linux.

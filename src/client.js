@@ -89,6 +89,19 @@ window.__ModuleLoader__.load({
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px; line-height: 18px;
 }
+.always-allow__path-risk {
+  display: flex; flex-direction: column; align-items: stretch; gap: 10px;
+  flex: 1 1 100%; min-width: 0; box-sizing: border-box;
+  padding: 12px; border-radius: var(--dsw-radius-xl);
+  border: 2px solid var(--dsw-alias-state-warn-secondary);
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-primary);
+}
+.always-allow__path-risk-copy { font-size: 12px; line-height: 19px; }
+.always-allow__path-risk-copy p { margin: 4px 0 0; }
+.always-allow__path-risk .always-allow__btn {
+  align-self: flex-end; max-width: 100%; white-space: normal; overflow-wrap: anywhere;
+}
 .always-allow__note--error { color: var(--dsw-alias-state-error-primary); }
 .always-allow__btn {
   font: inherit; font-size: 13px; line-height: 18px; cursor: pointer;
@@ -131,6 +144,9 @@ window.__ModuleLoader__.load({
       'reject': '拒绝',
       'allowOnce': '允许一次',
       'allowForever': '永久放行',
+      'pathRisk.title': '可执行路径授权风险',
+      'pathRisk.detail': '授权只匹配路径，不校验文件内容。文件被替换或符号链接改向后仍可能自动执行；相对路径取决于执行目录，后续参数也会放行。',
+      'blocked.path-risk': '请先阅读可执行路径的授权风险提示',
       'hostGrant': '在此工作区永久允许该前缀使用 danger-full-access（含后续参数）；复合命令仍需审批。',
       'blocked.unknown-call': '这条审批已结束或无法安全关联到命令',
       'blocked.unavailable': '无法提供永久授权：请检查规则插件是否启用，以及两个插件是否使用同一规则文件',
@@ -150,6 +166,9 @@ window.__ModuleLoader__.load({
       'reject': 'Reject',
       'allowOnce': 'Allow once',
       'allowForever': 'Always allow',
+      'pathRisk.title': 'Executable path approval risks',
+      'pathRisk.detail': 'Approval matches the path, not file contents. Replacing the file or redirecting a symlink may still run automatically. Relative paths depend on the execution directory; later arguments are also allowed.',
+      'blocked.path-risk': 'Read the executable path risk warning before saving',
       'hostGrant': 'Allow this prefix and later arguments with danger-full-access in this workspace; compound commands still require approval.',
       'blocked.unknown-call': 'This approval ended or could not be safely linked to a command',
       'blocked.unavailable': 'Persistent approval is unavailable; check that permission-rules is enabled and both plugins use the same rules file',
@@ -235,6 +254,7 @@ window.__ModuleLoader__.load({
       const [note, setNote] = React.useState(undefined)
       const [busy, setBusy] = React.useState(false)
       const waiting = React.useRef(false)
+      const pathRiskId = React.useId()
       const activeKey = React.useRef(approval?.key)
       activeKey.current = approval?.key
 
@@ -284,7 +304,7 @@ window.__ModuleLoader__.load({
         setBusy(true)
         setNote(undefined)
         const savingKey = approval.key
-        void call('save', { callId, sessionId, approvalToken: proposal.proposal.approvalToken, allowHost: proposal.proposal.hostAccess === true }).then((value) => {
+        void call('save', { callId, sessionId, approvalToken: proposal.proposal.approvalToken, allowHost: proposal.proposal.hostAccess === true, allowExecutablePath: proposal.proposal.executablePath === true }).then((value) => {
           if (activeKey.current !== savingKey) return
           if (value?.ok === true) {
             waiting.current = false
@@ -331,6 +351,16 @@ window.__ModuleLoader__.load({
       // in `blocked.<code>` was reachable ONLY from the save-failure path — that
       // is, never, because the button it belongs to is the one not rendered.
       const blockedHint = blockedHintOf(proposal, t)
+      const pathApproval = proposal.status === 'ready' && proposal.proposal.executablePath === true
+      const foreverButton = proposal.status === 'ready' || proposal.status === 'loading'
+        ? h('button', {
+          type: 'button',
+          className: 'always-allow__btn',
+          disabled: answered || busy || proposal.status !== 'ready',
+          'aria-describedby': pathApproval ? pathRiskId : undefined,
+          onClick: allowForever,
+        }, busy ? t('saving') : foreverLabel)
+        : null
 
       return h('div', { className: 'always-allow__root' },
         h('div', { className: 'always-allow__card', 'aria-busy': answered },
@@ -352,20 +382,20 @@ window.__ModuleLoader__.load({
               : h('div', {
                 className: `always-allow__note${note.error ? ' always-allow__note--error' : ''}`,
               }, note.text),
+            pathApproval
+              ? h('div', { className: 'always-allow__path-risk', role: 'group', 'aria-label': t('pathRisk.title') },
+                h('div', { id: pathRiskId, className: 'always-allow__path-risk-copy' },
+                  h('strong', null, t('pathRisk.title')),
+                  h('p', null, t('pathRisk.detail'))),
+                foreverButton)
+              : null,
             h('button', {
               type: 'button',
               className: 'always-allow__btn always-allow__btn--reject',
               disabled: answered || busy,
               onClick: () => { answer('rejected') },
             }, t('reject')),
-            proposal.status === 'ready' || proposal.status === 'loading'
-              ? h('button', {
-                type: 'button',
-                className: 'always-allow__btn',
-                disabled: answered || busy || proposal.status !== 'ready',
-                onClick: allowForever,
-              }, busy ? t('saving') : foreverLabel)
-              : null,
+            pathApproval ? null : foreverButton,
             h('button', {
               type: 'button',
               className: 'always-allow__btn always-allow__btn--primary',

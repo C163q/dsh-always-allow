@@ -65,10 +65,16 @@ Missing dependencies, disabled enforcement, malformed rules, revoked rules, chan
 | `git status --short` | `git status` |
 | `npm install pkg` | `npm install` |
 | `ls -la` | `ls` |
+| `bin/fff-timer-query --status` | `bin/fff-timer-query`, with a yellow risk panel |
+| `/usr/bin/git status -s` | `/usr/bin/git status`, with a yellow risk panel |
 | `git` | None: needs a subcommand |
 | `rm -rf build`, `bash script.sh` | None: excluded command |
 | `git status; other`, multiline commands, redirects | None: compound command |
-| Assignments, quoted words, expansions, escaped words, executable paths | None: ambiguous or unsupported syntax |
+| Assignments, quoted words, expansions, escaped words | None: ambiguous or unsupported syntax |
+
+Executable paths preserve the full literal spelling: `bin/probe`, `./bin/probe`, and `/opt/bin/probe` are separate prefixes. Relative and absolute forward-slash paths without quoting or expansions are supported. Existing exclusions and required subcommands are checked against the basename, case-insensitively, including common `.exe`, `.com`, `.cmd`, and `.bat` endings. These name checks do not establish the executable's identity.
+
+For a path prefix, the permanent-approval button sits inside a yellow frame with a risk explanation: the file may be replaced, a symlink may be redirected, relative paths depend on the execution directory, and later arguments are also allowed. The server requires an explicit path-risk acknowledgement from the client before saving, so an older client cannot silently grant a path without this UI.
 
 Later simple arguments remain free. A prefix such as `npm install` can execute package scripts; the UI grants the prefix's full capabilities, not a guarantee that every argument or executable is harmless. Use **Allow once** when that breadth is inappropriate. Refusal copy appears under commands that have no permanent prefix.
 
@@ -88,7 +94,7 @@ npm run check
 # Use an isolated DSH_HOME containing the two enabled plugins.
 DSH_HOME=/path/outside/workspace/to/test-home python3 scripts/boot.py \
   --patch /path/to/deepseek-harness/apps/web/tests/pin-browse-picker.overlay.yml
-DSH_HOME=/path/outside/workspace/to/test-home python3 scripts/verify_flow.py
+DSH_HOME=/path/outside/workspace/to/test-home python3 scripts/verify_flow.py --executable-path
 ```
 
 `verify_flow.py` uses Python Playwright and system Chromium (`PLAYWRIGHT_CHROMIUM` overrides its path). It sends real messages to the selected model, saves a prefix for a unique local Node program that only prints a marker, repeats it without clicking, and rejects a different probe prefix. It requires matching durable `approval/asked`, `approval/decided`, `tool/result`, and `turn/end` events, and captures screenshots in `.tmp/browser/`. Use test rules without earlier matching allow/deny/ask entries. The report records resource failures; only the stock `/open-in-app/icon/filemanager` 404 is excluded from the plugin error check. This script uses the host's v4 session format and needs `zstd`.

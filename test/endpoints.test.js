@@ -73,3 +73,17 @@ test('a second concurrent save is refused and an IO failure can be retried', asy
   assert.equal(f.entry.saving, false)
   assert.equal(f.grants.length, 0)
 })
+
+
+test('path saves require acknowledgement of the executable-path warning before persisting', async () => {
+  const f=fixture()
+  f.entry.command='bin/fff-timer-query --status'
+  const proposal=await dispatch(f.deps,'propose',identity)
+  assert.equal(proposal.executablePath,true)
+  const body={...identity,approvalToken:f.entry.token,allowHost:true}
+  assert.equal((await dispatch(f.deps,'save',body)).ok,false)
+  assert.equal(f.written.length,0)
+  assert.equal(f.grants.length,0)
+  assert.equal((await dispatch(f.deps,'save',{...body,allowExecutablePath:true})).ok,true)
+  assert.equal(f.grants[0].grant.prefix,'bin/fff-timer-query')
+})

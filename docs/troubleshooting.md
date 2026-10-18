@@ -6,7 +6,7 @@ Check that both plugins are installed and enabled in the same profile. dshmarket
 
 The `/always-allow` route refuses requests when Connection admission is missing, permission-rules is absent or in dry-run mode, or the two rule paths differ. A 401/403 means admission failed; reopen the launch URL for the exact host/port. A 503 means a required service or configuration is unavailable. Save errors display their reason in the card.
 
-Only a currently pending tracked shell approval can offer a prefix. Finished, cancelled, evicted, agentless, ambiguous duplicate-id, and non-shell calls have no writable approval. Refused compound, quoted, escaped, multiline, path-command, or excluded commands show an explanation; approve those one call at a time.
+Only a currently pending tracked shell approval can offer a prefix. Finished, cancelled, evicted, agentless, ambiguous duplicate-id, and non-shell calls have no writable approval. Refused compound, quoted, escaped, multiline, or excluded commands show an explanation; approve those one call at a time.
 
 ## Saving works but a later escalation asks again
 

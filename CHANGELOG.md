@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.3.1 - 2026-10-18
+
+- Permit complete literal executable-path prefixes, including relative paths such as `bin/fff-timer-query`. Preserve basename-based exclusions and required subcommands.
+- Wrap path permanent approval in a yellow risk panel explaining executable replacement, symlink redirection, execution directory, and later argument scope. Require path-risk acknowledgement before saving; existing host-grant checks remain in effect.
+- Extend regression and Chromium checks for path matching, warning consent, visible warning styling, and narrow-screen layout.
+
+
 ## v0.3.0 - 2026-10-18
 
 - Rebuild automatic escalation approval around live call identity, exact current arguments, the engine's first-match compiler/matcher, and a separate host authorization ledger.

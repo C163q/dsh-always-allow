@@ -96,14 +96,20 @@ export function proposeRule(command) {
       message: `"${word}" runs behind an environment assignment, so a prefix rule would not describe it`,
     }
   }
-  if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(word)) {
+  const executablePath = word.includes('/')
+  const basename = word.slice(word.lastIndexOf('/') + 1)
+  const executable = basename.toLowerCase().replace(/\.(?:exe|com|cmd|bat)$/, '')
+  const validWord = executablePath
+    ? SAFE_WORD.test(word) && !word.startsWith('-') && basename !== '' && basename !== '.' && basename !== '..'
+    : /^[A-Za-z_][A-Za-z0-9_-]*$/.test(word)
+  if (!validWord) {
     return {
       ok: false,
       code: 'unsafe',
       message: `"${word}" contains shell or glob syntax, so it cannot be saved as a literal prefix`,
     }
   }
-  if (NEVER_PREFIXABLE.has(word.toLowerCase())) {
+  if (NEVER_PREFIXABLE.has(executable)) {
     return {
       ok: false,
       code: 'never',
@@ -124,7 +130,7 @@ export function proposeRule(command) {
     }
   }
   const args = []
-  if (NEEDS_SUBCOMMAND.has(word.toLowerCase())) {
+  if (NEEDS_SUBCOMMAND.has(executable)) {
     const sub = rest[0]
     if (sub === undefined) {
       return {
@@ -142,7 +148,7 @@ export function proposeRule(command) {
     }
     args.push(sub)
   }
-  return { ok: true, command: word, args, label: [word, ...args].map(quoteWord).join(' ') }
+  return { ok: true, command: word, args, label: [word, ...args].map(quoteWord).join(' '), ...(executablePath ? { executablePath: true } : {}) }
 }
 
 /**

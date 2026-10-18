@@ -40,6 +40,9 @@ export async function saveFor(deps, body) {
   if (entry.hostAccess && body.allowHost !== true) return refused('explicit host-access consent is required')
   const proposal = proposeRule(entry.command)
   if (!proposal.ok) return proposal
+  if (proposal.executablePath && body.allowExecutablePath !== true) {
+    return {ok:false,code:'path-risk',message:'acknowledge the executable-path risk warning before saving'}
+  }
   const file = rulesFileFor(deps, entry.cwd)
   const grant = {cwd:entry.cwd, file, tool:entry.tool, prefix:proposal.label}
   const id = entry.hostAccess ? (deps.grantId?.(grant) ?? randomUUID()) : undefined

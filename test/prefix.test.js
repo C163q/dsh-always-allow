@@ -108,3 +108,18 @@ test('case variants and shell dispatch builtins cannot disguise broad command gr
     assert.equal(proposeRule(command).ok,false,command)
   }
 })
+
+
+test('literal executable paths preserve their full prefix and flag the path risk', () => {
+  for (const command of ['bin/fff-timer-query', './bin/fff-timer-query', '../bin/fff-timer-query', '/opt/tools/fff-timer-query']) {
+    assert.deepEqual(proposeRule(`${command} --status`), {ok:true,command,args:[],label:command,executablePath:true})
+  }
+  assert.deepEqual(proposeRule('/usr/bin/git status -s'), {ok:true,command:'/usr/bin/git',args:['status'],label:'/usr/bin/git status',executablePath:true})
+})
+
+test('path spellings cannot bypass excluded executables or subcommand requirements', () => {
+  for (const command of ['/bin/bash script.sh','./rm x','tools/PWSH.EXE -c id','/usr/bin/git','./tools/NODE.EXE','bin/probe/','bin/.','bin/..','bin/probe; id','bin/probe\nid','"bin/probe" x']) {
+    assert.equal(proposeRule(command).ok,false,command)
+  }
+  assert.equal(proposeRule('./tools/NODE.EXE script.js').args?.[0],'script.js')
+})

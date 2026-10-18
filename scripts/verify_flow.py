@@ -42,6 +42,7 @@ def main():
     parser.add_argument('--log')
     parser.add_argument('--out', default='.tmp/browser')
     parser.add_argument('--timeout', type=int, default=120)
+    parser.add_argument('--executable-path', action='store_true', help='execute the probe path directly and verify its yellow risk panel')
     args = parser.parse_args()
     home = Path(os.environ['DSH_HOME'])
     target = Path(args.out); target.mkdir(parents=True, exist_ok=True)
@@ -54,6 +55,13 @@ def main():
     rejected_probe = target / f'reject-{time.time_ns()}.cjs'
     rejected_probe.write_text('process.stdout.write("AA_SHOULD_NOT_RUN")\n')
     prefix = f'node {probe.resolve()}'
+    rejected_prefix = f'node {rejected_probe.resolve()}'
+    if args.executable_path:
+        for program in (probe, rejected_probe):
+            program.write_text('#!/usr/bin/env node\n' + program.read_text())
+            program.chmod(0o700)
+        prefix = str(probe.resolve())
+        rejected_prefix = str(rejected_probe.resolve())
     before = {str(p): p.stat().st_mtime_ns for p in session_files(home)}
     p,b,page,errors = launch_page(ignored_console_paths=('/open-in-app/icon/filemanager',))
     report = {'steps':[], 'errors':errors, 'failedResources':[]}
@@ -71,7 +79,7 @@ def main():
         for index,(command,action) in enumerate([
             (f'{prefix} AA_SAFE_FIRST', 'save'),
             (f'{prefix} AA_SAFE_REPEAT', 'auto'),
-            (f'node {rejected_probe.resolve()} AA_SHOULD_NOT_RUN', 'reject'),
+            (f'{rejected_prefix} AA_SHOULD_NOT_RUN', 'reject'),
         ]):
             prior = read_events(session) if session else []
             sequence = max((e.get('seq',-1) for e in prior),default=-1)
@@ -97,6 +105,23 @@ def main():
                         if time.monotonic()-start>args.timeout: raise AssertionError('save button never enabled')
                         page.wait_for_timeout(200)
                     assert 'danger-full-access' in page.locator(PANEL_CARD).inner_text()
+                    if args.executable_path:
+                        risk = page.get_by_role('group', name='可执行路径授权风险', exact=True)
+                        risk.wait_for(state='visible')
+                        assert risk.get_by_role('button', name='永久放行', exact=False).count() == 1
+                        assert all(word in risk.inner_text() for word in ['文件被替换', '符号链接', '执行目录', '后续参数'])
+                        style = risk.evaluate('(el) => {const s=getComputedStyle(el);return {border:s.borderTopColor,width:s.borderTopWidth,style:s.borderTopStyle}}')
+                        assert style['style']=='solid' and float(style['width'].replace('px',''))>=1,style
+                        report['pathWarningStyle']=style
+                        risk.screenshot(path=str(target/'path-risk-panel.png'))
+                        page.set_viewport_size({'width':620,'height':900})
+                        risk.scroll_into_view_if_needed()
+                        group_box=risk.bounding_box();button_box=risk.get_by_role('button',name='永久放行',exact=False).bounding_box()
+                        assert button_box['x']>=group_box['x'] and button_box['x']+button_box['width']<=group_box['x']+group_box['width']+1
+                        page.screenshot(path=str(target/'04-mobile-path-warning.png'))
+                        page.set_viewport_size({'width':1400,'height':900})
+                    else:
+                        assert page.locator('.always-allow__path-risk').count()==0
                     page.screenshot(path=str(target/'01-manual-approval.png'))
                     print('saving explicit grant:',button.inner_text(),flush=True)
                     with page.expect_response(lambda r:'/always-allow/save' in r.url) as saved:
