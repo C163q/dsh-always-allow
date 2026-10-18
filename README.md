@@ -99,6 +99,6 @@ DSH_HOME=/path/outside/workspace/to/test-home python3 scripts/verify_flow.py --e
 
 `verify_flow.py` uses Python Playwright and system Chromium (`PLAYWRIGHT_CHROMIUM` overrides its path). It sends real messages to the selected model, saves a prefix for a unique local Node program that only prints a marker, repeats it without clicking, and rejects a different probe prefix. It requires matching durable `approval/asked`, `approval/decided`, `tool/result`, and `turn/end` events, and captures screenshots in `.tmp/browser/`. Use test rules without earlier matching allow/deny/ask entries. The report records resource failures; only the stock `/open-in-app/icon/filemanager` 404 is excluded from the plugin error check. This script uses the host's v4 session format and needs `zstd`.
 
-Older `approval_test.sh` and `save_test.sh` are exploratory helpers; they do not establish automatic approval. Do not run their `--prune` options on production rules. [Troubleshooting](docs/troubleshooting.md), [rule format](docs/rules-format.md), and [framework notes](docs/PITFALLS.md) provide details.
+Older `approval_test.sh` and `save_test.sh` are exploratory helpers; they do not establish automatic approval. Do not run their `--prune` options on production rules. [Verification record](docs/verification/verification-2026-10-18.md), [Troubleshooting](docs/troubleshooting.md), [rule format](docs/rules-format.md), and [framework notes](docs/PITFALLS.md) provide details.
 
 Apache-2.0.

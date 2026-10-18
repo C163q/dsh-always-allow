@@ -9,4 +9,4 @@ User-approved change: executable paths such as `bin/fff-timer-query` may partici
 
 Files: src/prefix.js, src/endpoints.js, src/client.js; associated prefix/rules/endpoints tests; scripts/verify_flow.py; README and changelog.
 
-Completed: failing regressions observed before implementation; 53 tests and syntax checks pass. Chromium verified the warning group, 2 px yellow border, narrow-screen containment, successful direct executable-path execution, automatic repeat with no approval panel, and rejection of a different path. Independent review found no material regression. Evidence is recorded in docs/verification-2026-10-18.md and .tmp/path-browser/.
+Completed: failing regressions observed before implementation; 53 tests and syntax checks pass. Chromium verified the warning group, 2 px yellow border, narrow-screen containment, successful direct executable-path execution, automatic repeat with no approval panel, and rejection of a different path. Independent review found no material regression. Evidence is recorded in docs/verification/verification-2026-10-18.md and .tmp/path-browser/.
