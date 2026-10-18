@@ -2,6 +2,8 @@
 
 ## v0.3.1 - 2026-10-18
 
+- Fix clean-checkout CI by installing locked dependencies before tests, committing the npm lockfile, and aligning the test scope package with the resolved harness prerelease.
+
 - Permit complete literal executable-path prefixes, including relative paths such as `bin/fff-timer-query`. Preserve basename-based exclusions and required subcommands.
 - Wrap path permanent approval in a yellow risk panel explaining executable replacement, symlink redirection, execution directory, and later argument scope. Require path-risk acknowledgement before saving; existing host-grant checks remain in effect.
 - Extend regression and Chromium checks for path matching, warning consent, visible warning styling, and narrow-screen layout.

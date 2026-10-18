@@ -27,6 +27,8 @@ These instructions apply to this repository and its subdirectories. `dsh-always-
 
 Keep ESM and the existing function-plugin exports. Avoid adding default exports, inject declarations, or slots without checking their effects on Loader and client composition. Registrations must be cleaned up when the plugin unloads. Verify scope and listener-order changes through the real Cordis call chain.
 
+Use `npm ci` in a clean checkout before testing. Commit lockfile updates with dependency changes and keep CI installation ahead of checks/tests. Integration tests must run against declared published dependencies without relying on local harness links or skipping missing packages.
+
 For code or permission-behavior changes, reproduce the issue and add an effective regression test before changing the implementation. Run:
 
 ```sh

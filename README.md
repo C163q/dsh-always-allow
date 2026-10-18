@@ -98,8 +98,10 @@ The ledger is host policy: backing up a workspace alone does not transfer host a
 
 ## Verify
 
+Install the committed dependency graph with `npm ci`, including development dependencies. GitHub CI runs this step before checking and testing on Node 22 and 24. Tests use published Cordis and permission-rules packages; no local harness checkout or dependency symlinks are required.
+
 ```sh
-npm install
+npm ci
 npm test
 npm run check
 
