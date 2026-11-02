@@ -12,7 +12,9 @@ import sys
 import time
 from pathlib import Path
 
-from live import COMPOSER, PANEL_CARD, launch_page, load_state, token_from_log
+from playwright.sync_api import expect
+
+from live import PANEL_CARD, launch_page, load_state, token_from_log
 
 
 def read_events(path):
@@ -69,7 +71,7 @@ def main():
     session = None
     try:
         page.goto(url, wait_until='networkidle', timeout=60000)
-        page.wait_for_selector(COMPOSER, timeout=60000)
+        page.wait_for_selector('[contenteditable="true"]', timeout=60000)
         page.evaluate('''() => {
           window.__aaPanels = 0;
           new MutationObserver(records => { for (const record of records) for (const node of record.addedNodes) {
@@ -84,10 +86,12 @@ def main():
             prior = read_events(session) if session else []
             sequence = max((e.get('seq',-1) for e in prior),default=-1)
             panels = page.evaluate('window.__aaPanels')
-            composer = page.locator(COMPOSER).first
+            composer = page.locator('[contenteditable="true"]').first
             composer.wait_for(state='visible',timeout=60000)
             composer.fill(prompt(command, f'{time.time_ns()}-{index}'))
-            composer.press('Enter')
+            send = page.get_by_role('button', name='发送消息', exact=True)
+            expect(send).to_be_enabled(timeout=15000)
+            send.click()
             start=time.monotonic()
             while session is None:
                 changed=[f for f in session_files(home) if f.stat().st_mtime_ns != before.get(str(f))]

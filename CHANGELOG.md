@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Update the locked Harness integration-test dependencies to `0.2.1-rc.5` together, preserving their exact peer requirements and unrelated dependency versions.
+- Wait for an editable composer and an enabled Send button in Web verification, avoiding inert inputs and submission races during profile initialization.
+
 ## v0.3.1 - 2026-10-18
 
 - Fix clean-checkout CI by installing locked dependencies before tests, committing the npm lockfile, and aligning the test scope package with the resolved harness prerelease.
