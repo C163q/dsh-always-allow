@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Shorten the path-risk, host-access, compound-command, and unavailable-service copy in both languages. Omit refusal hints for unsupported shell syntax and excluded commands while preserving their restrictions and one-time approval options.
 - Update the locked Harness integration-test dependencies to `0.2.1-rc.5` together, preserving their exact peer requirements and unrelated dependency versions.
 - Wait for an editable composer and an enabled Send button in Web verification, avoiding inert inputs and submission races during profile initialization.
 

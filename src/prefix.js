@@ -57,9 +57,8 @@ export const NEVER_PREFIXABLE = new Set([
 export const OPERATORS = /[|&;<>`$(){}]|\|\||&&/
 
 /**
- * Reasons a command yields no prefix. Each maps to one localized sentence in
- * the client, so the user is told why the button is missing instead of being
- * left to guess.
+ * Reasons a command yields no permanent prefix. The client localizes selected
+ * explanations; shell-syntax and excluded-command refusals have no hint.
  * @typedef {'empty'|'unsafe'|'compound'|'too-broad'|'never'} RefusalCode
  */
 

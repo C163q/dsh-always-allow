@@ -76,7 +76,7 @@ Executable paths preserve the full literal spelling: `bin/probe`, `./bin/probe`,
 
 For a path prefix, the permanent-approval button sits inside a yellow frame with a risk explanation: the file may be replaced, a symlink may be redirected, relative paths depend on the execution directory, and later arguments are also allowed. The server requires an explicit path-risk acknowledgement from the client before saving, so an older client cannot silently grant a path without this UI.
 
-Later simple arguments remain free. A prefix such as `npm install` can execute package scripts; the UI grants the prefix's full capabilities, not a guarantee that every argument or executable is harmless. Use **Allow once** when that breadth is inappropriate. Refusal copy appears under commands that have no permanent prefix.
+Later simple arguments remain free. A prefix such as `npm install` can execute package scripts; the UI grants the prefix's full capabilities, not a guarantee that every argument or executable is harmless. Use **Allow once** when that breadth is inappropriate. Compound commands and other actionable refusals show a short explanation. Unsupported shell syntax and excluded commands show only the one-time and rejection options, without an extra refusal explanation.
 
 ## Revoke
 

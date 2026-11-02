@@ -110,10 +110,10 @@ def main():
                         page.wait_for_timeout(200)
                     assert 'danger-full-access' in page.locator(PANEL_CARD).inner_text()
                     if args.executable_path:
-                        risk = page.get_by_role('group', name='可执行路径授权风险', exact=True)
+                        risk = page.get_by_role('group', name='路径风险', exact=True)
                         risk.wait_for(state='visible')
                         assert risk.get_by_role('button', name='永久放行', exact=False).count() == 1
-                        assert all(word in risk.inner_text() for word in ['文件被替换', '符号链接', '执行目录', '后续参数'])
+                        assert all(word in risk.inner_text() for word in ['不校验文件内容', '符号链接', '执行目录', '后续参数', '仍可能放行'])
                         style = risk.evaluate('(el) => {const s=getComputedStyle(el);return {border:s.borderTopColor,width:s.borderTopWidth,style:s.borderTopStyle}}')
                         assert style['style']=='solid' and float(style['width'].replace('px',''))>=1,style
                         report['pathWarningStyle']=style

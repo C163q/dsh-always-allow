@@ -27,6 +27,20 @@ function dictionary(entries) {
   return (key) => entries[key] ?? key
 }
 
+/** Read the dictionaries registered by the shipped client bundle. */
+function loadDictionaries() {
+  let plugin
+  let dictionaries
+  new Function('window', source)({ __ModuleLoader__: { load: ({ factory }) => { plugin = factory(() => ({})) } } })
+  const locale = {
+    register: (_namespace, values) => { dictionaries = values; return () => {} },
+    bind: () => key => key,
+  }
+  const slots = { inject: () => () => {} }
+  plugin.apply({ get: name => ({ locale, slots })[name], effect: callback => callback() })
+  return dictionaries
+}
+
 test('a compound command explains why there is no forever button', () => {
   const t = dictionary({ 'blocked.compound': '这是一条复合命令' })
   const hint = loadHelper()({ status: 'blocked', result: { code: 'compound' } }, t)
@@ -34,7 +48,7 @@ test('a compound command explains why there is no forever button', () => {
 })
 
 test('every refusal code with copy produces a hint', () => {
-  const codes = ['empty', 'unsafe', 'compound', 'too-broad', 'never']
+  const codes = ['empty', 'compound', 'too-broad', 'unknown-call', 'unavailable']
   const entries = Object.fromEntries(codes.map((code) => [`blocked.${code}`, `why-${code}`]))
   const t = dictionary(entries)
   const helper = loadHelper()
@@ -55,10 +69,18 @@ test('an unknown code stays silent instead of printing the key', () => {
   assert.equal(loadHelper()({ status: 'blocked' }, t), null)
 })
 
-test('the bundle ships copy for every refusal code', () => {
-  // The helper is only useful if the sentences exist in both dictionaries.
-  for (const code of ['empty', 'unsafe', 'compound', 'too-broad', 'never']) {
-    const occurrences = source.split(`'blocked.${code}':`).length - 1
-    assert.equal(occurrences, 2, `blocked.${code} needs one zh and one en entry`)
+test('shipped dictionaries explain actionable refusals in both languages', () => {
+  for (const entries of Object.values(loadDictionaries())) {
+    for (const code of ['empty', 'compound', 'too-broad', 'unknown-call', 'unavailable']) {
+      assert.ok(loadHelper()({ status: 'blocked', result: { code } }, dictionary(entries)))
+    }
+  }
+})
+
+test('shell syntax and excluded commands have no refusal hint in either language', () => {
+  for (const entries of Object.values(loadDictionaries())) {
+    for (const code of ['unsafe', 'never']) {
+      assert.equal(loadHelper()({ status: 'blocked', result: { code } }, dictionary(entries)), null)
+    }
   }
 })
