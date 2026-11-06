@@ -1,4 +1,4 @@
-# Test the published dependencies on both supported Node lines.
+# Test published dependencies on the Harness minimum and the latest Node 24.
 # No harness checkout or local dependency links are required.
 name: ci
 
@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [22, 24]
+        node: ['24.9.0', '24']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,6 +27,8 @@ jobs:
           cache: npm
       - name: Install locked dependencies
         run: npm ci
+      - name: Check dependency compatibility
+        run: npm ls --all
       - name: Syntax check every source file
         run: npm run check
       - name: Run the test suites

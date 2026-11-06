@@ -10,6 +10,8 @@ Requires `dsh-permission-rules` 0.7.15 or compatible 0.7.x, installed and **enab
 pnpm dsh plugin --profile web add /absolute/path/to/dsh-always-allow
 ```
 
+For Harness `0.2.2-rc.1`, use permission-rules `0.7.21`, whose published peer ranges include `0.2.2` prereleases. Harness itself requires Node.js 24.9 or newer. Existing prefix rules and host grants need no migration.
+
 Set both rows in `$DSH_HOME/profiles/web/cordis.patch.yml` (default DSH_HOME: `~/.dsh`). The row ids below are the bundle defaults:
 
 ```yaml
@@ -93,14 +95,14 @@ The ledger is host policy: backing up a workspace alone does not transfer host a
 - `src/endpoints.js`: propose/save operations for pending approvals, one-shot tokens, and explicit risk acknowledgement.
 - `src/rules-file.js`: rule serialization and YAML document edits that preserve comments and order.
 - `src/client.js`: browser module loaded through `window.__ModuleLoader__`; uses platform-provided React without a separate build step.
-- `test/`: Node tests that verify permission semantics with real Cordis and the permission-rules compiler/matcher.
+- `test/`: Node tests that verify permission semantics with real Cordis, the Harness tool/approval/Session pipeline, and the permission-rules compiler/matcher.
 - `scripts/`: isolated Web instances, Playwright/Chromium checks, and session-event verification.
 
 ## Verify
 
-Install the committed dependency graph with `npm ci`, including development dependencies. GitHub CI runs this step before checking and testing on Node 22 and 24. Tests use published Cordis and permission-rules packages; no local harness checkout or dependency symlinks are required.
+Development checks require Node.js 24.9 or newer. Install the committed dependency graph with `npm ci`, including development dependencies. GitHub CI runs this step before dependency checks, syntax checks, and tests on Node 24.9.0 and the latest Node 24. Tests use published Harness, Cordis, and permission-rules packages; no local harness checkout or dependency symlinks are required.
 
-The locked Harness test dependencies target `0.2.1-rc.5`. See the [rc.5 compatibility record](docs/verification/compatibility-2026-11-02.md) for the source comparison and Web verification scope.
+The locked test dependencies target Harness `0.2.2-rc.1`, Cordis `4.1.0`, and permission-rules `0.7.21`. See the [rc.1 compatibility record](docs/verification/compatibility-2026-11-07.md) for the source comparison, published-dependency checks, and Web verification scope. The existing approval panel remains in use.
 
 ```sh
 npm ci
@@ -113,7 +115,7 @@ DSH_HOME=/path/outside/workspace/to/test-home python3 scripts/boot.py \
 DSH_HOME=/path/outside/workspace/to/test-home python3 scripts/verify_flow.py --executable-path
 ```
 
-`verify_flow.py` uses Python Playwright and system Chromium (`PLAYWRIGHT_CHROMIUM` overrides its path). Prepare the isolated profile with a selected workspace and dismiss any first-run notice before running it. The script waits for an editable composer and an enabled Send button before submitting each real message to the selected model. It saves a prefix for a unique local Node program that only prints a marker, repeats it without clicking, and rejects a different probe prefix. It requires matching durable `approval/asked`, `approval/decided`, `tool/result`, and `turn/end` events, and captures screenshots in `.tmp/browser/`. Use test rules without earlier matching allow/deny/ask entries. The report records resource failures; only the stock `/open-in-app/icon/filemanager` 404 is excluded from the plugin error check. This script uses the host's v4 session format and needs `zstd`.
+`verify_flow.py` uses Python Playwright and system Chromium (`PLAYWRIGHT_CHROMIUM` overrides its path). Prepare the isolated profile with a selected workspace and dismiss any first-run notice before running it. If the profile uses an absolute rules file with `badFilePolicy: fail`, create a valid initial document such as `rules: []` before booting. The script waits for an editable composer and an enabled Send button before submitting each real message to the selected model. It saves a prefix for a unique local Node program that only prints a marker, repeats it without clicking, and rejects a different probe prefix. It requires matching durable `approval/asked`, `approval/decided`, `tool/result`, and `turn/end` events, and captures screenshots in `.tmp/browser/`. Path verification waits for the narrow layout and sidebar-collapse animation before taking its screenshot. Use test rules without earlier matching allow/deny/ask entries. The report records resource failures; only the stock `/open-in-app/icon/filemanager` 404 is excluded from the plugin error check. This script uses the host's v4 session format and needs `zstd`.
 
 Older `approval_test.sh` and `save_test.sh` are exploratory helpers; they do not establish automatic approval. Do not run their `--prune` options on production rules. [Verification record](docs/verification/verification-2026-10-18.md), [Troubleshooting](docs/troubleshooting.md), [rule format](docs/rules-format.md), and [framework notes](docs/PITFALLS.md) provide details.
 

@@ -119,7 +119,26 @@ def main():
                         report['pathWarningStyle']=style
                         risk.screenshot(path=str(target/'path-risk-panel.png'))
                         page.set_viewport_size({'width':620,'height':900})
+                        page.wait_for_function('''() => {
+                          const card=document.querySelector('.always-allow__card');
+                          if (!card) return false;
+                          const box=card.getBoundingClientRect();
+                          return box.x>=-1 && box.right<=innerWidth+1;
+                        }''')
+                        drawer=page.locator('[data-sidebar-drawer]:not([data-sidebar-collapsed])')
+                        if drawer.count():
+                            page.locator('[data-sidebar-mask]').click(position={'x':610,'y':450})
+                        # The new layout collapses the sidebar through a CSS transition.
+                        # Its state attribute changes before it stops covering the card.
+                        page.wait_for_function('''() => {
+                          const frame=document.querySelector('[data-sidebar-drawer]');
+                          if (!frame) return true;
+                          const sidebar=frame.querySelector('[class*="sidebarCol"]');
+                          return frame.hasAttribute('data-sidebar-collapsed')
+                            && sidebar && getComputedStyle(sidebar).visibility==='hidden';
+                        }''')
                         risk.scroll_into_view_if_needed()
+                        report['narrowCardBounds']=page.locator(PANEL_CARD).bounding_box()
                         group_box=risk.bounding_box();button_box=risk.get_by_role('button',name='永久放行',exact=False).bounding_box()
                         assert button_box['x']>=group_box['x'] and button_box['x']+button_box['width']<=group_box['x']+group_box['width']+1
                         page.screenshot(path=str(target/'04-mobile-path-warning.png'))

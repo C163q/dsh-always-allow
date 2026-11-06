@@ -3,8 +3,10 @@
 ## Unreleased
 
 - Shorten the path-risk, host-access, compound-command, and unavailable-service copy in both languages. Omit refusal hints for unsupported shell syntax and excluded commands while preserving their restrictions and one-time approval options.
-- Update the locked Harness integration-test dependencies to `0.2.1-rc.5` together, preserving their exact peer requirements and unrelated dependency versions.
+- Update the locked Harness integration-test dependencies to `0.2.2-rc.1`, Cordis to `4.1.0`, and permission-rules to `0.7.21`. Explicitly include `0.2.2` prereleases in the Harness engine range; run CI on Node 24.9.0 and the latest Node 24 with dependency compatibility checks.
+- Exercise saved host grants through the published Harness tool pipeline, approval service, and managed Session; verify automatic repeats, unmatched rejection, earlier deny precedence, the `never` policy, durable approval pairs, and unload cleanup.
 - Wait for an editable composer and an enabled Send button in Web verification, avoiding inert inputs and submission races during profile initialization.
+- Wait for responsive layout and sidebar-collapse transitions before capturing narrow approval screenshots.
 
 ## v0.3.1 - 2026-10-18
 
